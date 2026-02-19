@@ -122,16 +122,19 @@ target_bitrate() {
     esac
 }
 
-# Check if actual bitrate is within tolerance of target (returns 1=ok, 0=no)
-bitrate_within_tolerance() {
+# Check if bitrate is above target + tolerance (returns 1=needs encoding, 0=ok)
+# Only encode when bitrate is TOO HIGH. Never encode when bitrate is at or below target.
+bitrate_needs_encoding() {
     local actual="$1" target="$2" tol="${3:-5}"
     if [ "$actual" -le 0 ] || [ "$target" -le 0 ]; then
         echo 0
         return
     fi
-    local pct
-    pct=$(python3 -c "a=${actual}; t=${target}; print(int((abs(a-t)*100.0/t)+0.5))")
-    [ "$pct" -le "$tol" ] && echo 1 || echo 0
+    # Calculate how much % above target the actual bitrate is
+    local pct_above
+    pct_above=$(python3 -c "a=${actual}; t=${target}; pct=((a-t)*100.0/t); print(int(pct+0.5) if pct>0 else 0)")
+    # Only encode if actual is more than tol% ABOVE target
+    [ "$pct_above" -gt "$tol" ] && echo 1 || echo 0
 }
 
 # Estimate output file size in bytes from bitrates and duration

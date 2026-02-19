@@ -126,6 +126,42 @@ assert_eq "SD width"    "480p"  "$(resolution_label "640")"
 assert_eq "Empty width" "720p"  "$(resolution_label "")"
 
 echo ""
+echo "=== Testing bitrate_needs_encoding ==="
+
+# Target 3000, tolerance 5% → threshold = 3150
+# Only encode if actual > 3150
+
+assert_eq "Way above target → encode" \
+    "1" "$(bitrate_needs_encoding 5000 3000 5)"
+
+assert_eq "Slightly above tolerance → encode" \
+    "1" "$(bitrate_needs_encoding 3200 3000 5)"
+
+assert_eq "At tolerance boundary → no encode" \
+    "0" "$(bitrate_needs_encoding 3150 3000 5)"
+
+assert_eq "At target → no encode" \
+    "0" "$(bitrate_needs_encoding 3000 3000 5)"
+
+assert_eq "Below target → no encode" \
+    "0" "$(bitrate_needs_encoding 2000 3000 5)"
+
+assert_eq "Way below target → no encode" \
+    "0" "$(bitrate_needs_encoding 500 3000 5)"
+
+assert_eq "Zero measured → no encode" \
+    "0" "$(bitrate_needs_encoding 0 3000 5)"
+
+assert_eq "4K above target → encode" \
+    "1" "$(bitrate_needs_encoding 20000 12000 5)"
+
+assert_eq "4K at target → no encode" \
+    "0" "$(bitrate_needs_encoding 12000 12000 5)"
+
+assert_eq "4K below target → no encode" \
+    "0" "$(bitrate_needs_encoding 8000 12000 5)"
+
+echo ""
 echo "=========================================="
 echo "Results: $PASS passed, $FAIL failed"
 echo "=========================================="

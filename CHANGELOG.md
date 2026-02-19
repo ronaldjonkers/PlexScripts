@@ -3,6 +3,20 @@
 All notable changes to this project will be documented in this file.
 Format follows [Semantic Versioning](https://semver.org/).
 
+## [1.0.4] - 2026-02-19
+
+### Fixed
+- **Only encode when bitrate is too HIGH** — files at or below target bitrate are now skipped
+  (previously files with lower bitrate than target were also re-encoded, causing quality loss)
+- Replaced `bitrate_within_tolerance()` with `bitrate_needs_encoding()` for clear one-directional check
+
+### Changed
+- Clearer decision logging: shows exactly why a file is encoded, skipped, or renamed
+  - `Bitrate already at or below target (2000 <= 3000 kbps)`
+  - `Bitrate within 5% tolerance of target`
+  - `Bitrate 5000 kbps exceeds target 3000 kbps by >5% → encoding`
+- Added 10 new tests for encoding decision logic (38 total, all passing)
+
 ## [1.0.3] - 2026-02-19
 
 ### Fixed

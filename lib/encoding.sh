@@ -157,8 +157,14 @@ process_file() {
 
     log_info "  Resolution: ${res} | Measured: ${v_meas} kbps | Target: ${target_vb} kbps"
 
-    # Already within tolerance? Just rename
-    if [ "$(bitrate_within_tolerance "$v_meas" "$target_vb" "$tol")" = "1" ]; then
+    # Decision: only encode if bitrate is ABOVE target + tolerance
+    # If bitrate is at or below target, just rename (re-encoding would lose quality)
+    if [ "$(bitrate_needs_encoding "$v_meas" "$target_vb" "$tol")" = "0" ]; then
+        if [ "$v_meas" -gt 0 ] && [ "$v_meas" -le "$target_vb" ]; then
+            log_skip "  Bitrate already at or below target (${v_meas} <= ${target_vb} kbps)"
+        else
+            log_skip "  Bitrate within ${tol}% tolerance of target"
+        fi
         if [ "$file" != "$out" ]; then
             log_info "  [RENAME] $(basename "$file")"
             log_info "       →   $(basename "$out")"
@@ -168,6 +174,8 @@ process_file() {
         fi
         return 0
     fi
+
+    log_info "  Bitrate ${v_meas} kbps exceeds target ${target_vb} kbps by >$tol% → encoding"
 
     # No-bloat check: skip encoding if output would be >= 98% of source
     local dur a_kbps src_bytes limit est
