@@ -2,6 +2,47 @@
 # lib/encoding.sh - Encoding logic for Media Manager
 # Supports VideoToolbox (macOS HW) with x265 software fallback
 
+# Preflight check: verify HandBrakeCLI works and log version
+check_handbrake() {
+    local hb_version
+    hb_version=$(HandBrakeCLI --version 2>&1 | head -1) || true
+    if [ -z "$hb_version" ]; then
+        log_error "HandBrakeCLI version check failed — encoder may not work"
+        return 1
+    fi
+    log_info "HandBrakeCLI: $hb_version"
+    return 0
+}
+
+# Run HandBrakeCLI with error capture
+# Args: description src out encoder_args...
+_run_handbrake() {
+    local desc="$1" src="$2" out="$3"
+    shift 3
+
+    local hb_log
+    hb_log=$(mktemp /tmp/media-manager-hb.XXXXXX 2>/dev/null || echo "/tmp/media-manager-hb.$$")
+
+    # Remove stale output from previous failed attempt
+    [ -f "$out" ] && [ "$out" != "$src" ] && rm -f -- "$out"
+
+    if HandBrakeCLI -i "$src" -o "$out" "$@" \
+        < /dev/null >"$hb_log" 2>&1; then
+        rm -f "$hb_log"
+        return 0
+    fi
+
+    # Encoding failed — show last 20 lines of HandBrake output
+    log_warn "  $desc failed. HandBrakeCLI output (last 20 lines):"
+    tail -20 "$hb_log" 2>/dev/null | while IFS= read -r line; do
+        log_warn "    | $line"
+    done
+    rm -f "$hb_log"
+    # Clean up partial output
+    [ -f "$out" ] && [ "$out" != "$src" ] && rm -f -- "$out"
+    return 1
+}
+
 # Encode a single file with HandBrakeCLI
 # Args: source_file target_bitrate output_file
 encode_file() {
@@ -14,32 +55,30 @@ encode_file() {
     # Try VideoToolbox on macOS first
     if [ "$os" = "macos" ]; then
         log_info "  [ENC] VideoToolbox H.265 10-bit → $(basename "$out")"
-        if HandBrakeCLI -i "$src" -o "$out" \
+        if _run_handbrake "VideoToolbox" "$src" "$out" \
             --format mkv \
             -e vt_h265_10bit --vb "$vb" --encoder-preset "$vt_preset" \
             --all-audio --aencoder copy \
-            --all-subtitles --subtitle-burned=none \
-            < /dev/null >/dev/null 2>&1; then
+            --all-subtitles --subtitle-burned=none; then
             log_ok "  VideoToolbox encode complete"
             return 0
         fi
-        log_warn "  VideoToolbox failed, falling back to x265"
+        log_warn "  Falling back to x265 software encoder"
     fi
 
     # Software x265 fallback (works on both macOS and Linux)
     log_info "  [ENC] x265 software encode → $(basename "$out")"
-    if HandBrakeCLI -i "$src" -o "$out" \
+    if _run_handbrake "x265" "$src" "$out" \
         --format mkv \
         -e x265 --vb "$vb" --two-pass --turbo \
         --encoder-profile main10 --encoder-preset "$x265_preset" \
         --all-audio --aencoder copy \
-        --all-subtitles --subtitle-burned=none \
-        < /dev/null >/dev/null 2>&1; then
+        --all-subtitles --subtitle-burned=none; then
         log_ok "  x265 encode complete"
         return 0
     fi
 
-    log_error "  Encoding failed for $(basename "$src")"
+    log_error "  All encoders failed for $(basename "$src")"
     return 1
 }
 

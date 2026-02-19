@@ -3,6 +3,18 @@
 All notable changes to this project will be documented in this file.
 Format follows [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] - 2026-02-19
+
+### Fixed
+- HandBrakeCLI errors now captured and shown in logs instead of suppressed (`>/dev/null 2>&1`)
+- Failed encode output (last 20 lines) is displayed to aid debugging (e.g. `Abort trap: 6`)
+- Stale/partial output files cleaned up on encode failure
+
+### Added
+- HandBrakeCLI preflight version check at service startup
+- `_run_handbrake()` helper with temp log capture and error reporting
+- `check_handbrake()` function for startup diagnostics
+
 ## [1.0.0] - 2026-02-19
 
 ### Added

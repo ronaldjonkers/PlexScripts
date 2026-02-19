@@ -187,6 +187,7 @@ cmd_start() {
     need HandBrakeCLI || exit 1
     need ffprobe || exit 1
     need python3 || exit 1
+    check_handbrake || log_warn "HandBrakeCLI preflight failed — encoding errors may occur"
 
     while true; do
         run_scan
@@ -204,6 +205,7 @@ cmd_scan() {
     need HandBrakeCLI || exit 1
     need ffprobe || exit 1
     need python3 || exit 1
+    check_handbrake || log_warn "HandBrakeCLI preflight failed — encoding errors may occur"
 
     run_scan
     log_info "Done."
