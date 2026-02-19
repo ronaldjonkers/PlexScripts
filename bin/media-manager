@@ -16,6 +16,9 @@ source "${PROJECT_DIR}/lib/utils.sh"
 source "${PROJECT_DIR}/lib/naming.sh"
 source "${PROJECT_DIR}/lib/encoding.sh"
 
+# ---------- Runtime flags ----------
+VERBOSE="${VERBOSE:-false}"
+
 # ---------- Default settings ----------
 SCAN_INTERVAL="${SCAN_INTERVAL:-300}"
 DELETE_ORIGINALS="${DELETE_ORIGINALS:-no}"
@@ -147,7 +150,7 @@ run_scan() {
 # ---------- Usage ----------
 usage() {
     cat <<EOF
-Media Manager v1.0.0 - Continuous media processing service
+Media Manager v1.0.2 - Continuous media processing service
 
 Usage: $(basename "$0") [command] [options]
 
@@ -159,8 +162,14 @@ Commands:
 
 Options:
   -c, --config FILE   Path to config file
+  -V, --verbose       Show full HandBrakeCLI output (useful for debugging)
   -h, --help          Show this help message
   -v, --version       Show version
+
+Examples:
+  $(basename "$0") start                   # Start as background service
+  $(basename "$0") scan --verbose           # Single scan with full encoder output
+  $(basename "$0") start -V                 # Daemon mode with verbose encoder output
 
 EOF
 }
@@ -172,7 +181,8 @@ cmd_start() {
     acquire_lock
 
     log_info "=========================================="
-    log_info "Media Manager v1.0.0 starting"
+    log_info "Media Manager v1.0.2 starting"
+    log_info "Verbose mode: ${VERBOSE}"
     log_info "Profile: ${PROFILE_NAME:-Custom}"
     log_info "Quality: 2160p=${VB2160}kbps 1080p=${VB1080}kbps 720p=${VB720}kbps"
     log_info "Scan interval: ${SCAN_INTERVAL}s"
@@ -259,8 +269,12 @@ while [ $# -gt 0 ]; do
             usage
             exit 0
             ;;
+        -V|--verbose)
+            VERBOSE="true"
+            shift
+            ;;
         -v|--version)
-            echo "Media Manager v1.0.0"
+            echo "Media Manager v1.0.2"
             exit 0
             ;;
         *)

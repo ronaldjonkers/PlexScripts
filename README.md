@@ -135,6 +135,12 @@ WATCH_DIRS=(
 # Run a single scan and exit
 ./bin/media-manager scan
 
+# Start with verbose output (shows full HandBrakeCLI output)
+./bin/media-manager start --verbose
+
+# Single scan with verbose output (great for debugging)
+./bin/media-manager scan -V
+
 # Check if the service is running
 ./bin/media-manager status
 
@@ -147,6 +153,8 @@ WATCH_DIRS=(
 # Show help
 ./bin/media-manager --help
 ```
+
+> **Tip:** Use `--verbose` / `-V` when running manually to see the full HandBrakeCLI encoder output in real-time. Without it, encoder output is only shown (last 20 lines) when an encode fails.
 
 ### Service Management
 

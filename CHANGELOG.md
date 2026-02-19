@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 Format follows [Semantic Versioning](https://semver.org/).
 
+## [1.0.2] - 2026-02-19
+
+### Added
+- `--verbose` / `-V` CLI flag for real-time HandBrakeCLI output when running manually
+- Usage examples in `--help` output
+- Verbose mode indicator in startup log
+
 ## [1.0.1] - 2026-02-19
 
 ### Fixed

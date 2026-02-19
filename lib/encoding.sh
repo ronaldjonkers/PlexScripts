@@ -14,17 +14,29 @@ check_handbrake() {
     return 0
 }
 
-# Run HandBrakeCLI with error capture
+# Run HandBrakeCLI with error capture (or live output in verbose mode)
 # Args: description src out encoder_args...
 _run_handbrake() {
     local desc="$1" src="$2" out="$3"
     shift 3
 
-    local hb_log
-    hb_log=$(mktemp /tmp/media-manager-hb.XXXXXX 2>/dev/null || echo "/tmp/media-manager-hb.$$")
-
     # Remove stale output from previous failed attempt
     [ -f "$out" ] && [ "$out" != "$src" ] && rm -f -- "$out"
+
+    # Verbose mode: stream HandBrakeCLI output directly to console
+    if [ "${VERBOSE:-false}" = "true" ]; then
+        log_info "  [VERBOSE] HandBrakeCLI output for $desc:"
+        if HandBrakeCLI -i "$src" -o "$out" "$@" < /dev/null; then
+            return 0
+        fi
+        log_warn "  $desc failed (see output above)"
+        [ -f "$out" ] && [ "$out" != "$src" ] && rm -f -- "$out"
+        return 1
+    fi
+
+    # Normal mode: capture output to temp file, show on failure
+    local hb_log
+    hb_log=$(mktemp /tmp/media-manager-hb.XXXXXX 2>/dev/null || echo "/tmp/media-manager-hb.$$")
 
     if HandBrakeCLI -i "$src" -o "$out" "$@" \
         < /dev/null >"$hb_log" 2>&1; then
