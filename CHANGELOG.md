@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 Format follows [Semantic Versioning](https://semver.org/).
 
+## [1.0.3] - 2026-02-19
+
+### Fixed
+- Auto-detect and repair broken HandBrakeCLI library dependencies (e.g. missing `svt-av1`)
+- Preflight now hard-stops if HandBrakeCLI is broken instead of scanning thousands of files with guaranteed failures
+- `install.sh` explicitly installs `svt-av1` and verifies HandBrakeCLI works after install
+
+### Changed
+- Rename logging now shows clear `from → to` format for every rename operation
+- Preflight auto-repairs via `brew reinstall svt-av1 handbrake` on macOS
+
 ## [1.0.2] - 2026-02-19
 
 ### Added

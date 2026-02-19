@@ -2,10 +2,40 @@
 # lib/encoding.sh - Encoding logic for Media Manager
 # Supports VideoToolbox (macOS HW) with x265 software fallback
 
-# Preflight check: verify HandBrakeCLI works and log version
+# Preflight check: verify HandBrakeCLI works and auto-repair broken deps
 check_handbrake() {
+    local hb_output
+    hb_output=$(HandBrakeCLI --version 2>&1) || true
+
+    # Check for broken dynamic library (common after brew upgrades)
+    if echo "$hb_output" | grep -q "Library not loaded"; then
+        log_warn "HandBrakeCLI has broken library dependencies"
+        local missing_lib
+        missing_lib=$(echo "$hb_output" | grep "Library not loaded" | head -1 | sed 's/.*Library not loaded: //')
+        log_warn "Missing: $missing_lib"
+
+        # Auto-repair on macOS via brew
+        if [ "$(detect_os)" = "macos" ] && command -v brew >/dev/null 2>&1; then
+            log_info "Attempting auto-repair via Homebrew..."
+            brew reinstall svt-av1 2>/dev/null && log_ok "svt-av1 reinstalled" || true
+            brew reinstall handbrake 2>/dev/null && log_ok "HandBrake reinstalled" || true
+
+            # Re-check after repair
+            hb_output=$(HandBrakeCLI --version 2>&1) || true
+            if echo "$hb_output" | grep -q "Library not loaded"; then
+                log_error "Auto-repair failed. Please run manually:"
+                log_error "  brew reinstall svt-av1 handbrake"
+                return 1
+            fi
+            log_ok "HandBrakeCLI repaired successfully"
+        else
+            log_error "Please reinstall HandBrakeCLI to fix broken libraries"
+            return 1
+        fi
+    fi
+
     local hb_version
-    hb_version=$(HandBrakeCLI --version 2>&1 | head -1) || true
+    hb_version=$(echo "$hb_output" | head -1)
     if [ -z "$hb_version" ]; then
         log_error "HandBrakeCLI version check failed — encoder may not work"
         return 1
@@ -130,7 +160,8 @@ process_file() {
     # Already within tolerance? Just rename
     if [ "$(bitrate_within_tolerance "$v_meas" "$target_vb" "$tol")" = "1" ]; then
         if [ "$file" != "$out" ]; then
-            log_info "  [RENAME] → $(basename "$out")"
+            log_info "  [RENAME] $(basename "$file")"
+            log_info "       →   $(basename "$out")"
             mv -n -- "$file" "$out"
         else
             log_skip "  Already correct name and bitrate"
@@ -149,6 +180,8 @@ process_file() {
     if [ "$est" -ge "$limit" ]; then
         log_skip "  No-bloat: estimated output >= 98% of source, rename only"
         if [ "$out" != "$file" ]; then
+            log_info "  [RENAME] $(basename "$file")"
+            log_info "       →   $(basename "$out")"
             mv -n -- "$file" "$out"
         fi
         return 0

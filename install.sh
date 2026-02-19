@@ -85,6 +85,14 @@ install_deps_macos() {
     header "Installing Dependencies (macOS)"
     install_homebrew
 
+    # Ensure svt-av1 is installed (HandBrakeCLI depends on it)
+    if ! brew list svt-av1 >/dev/null 2>&1; then
+        info "Installing svt-av1 (HandBrake dependency)..."
+        brew install svt-av1
+    else
+        ok "svt-av1 already installed"
+    fi
+
     local deps=("handbrake" "ffmpeg" "python3")
     local brew_deps=("handbrake" "ffmpeg" "python3")
 
@@ -93,10 +101,16 @@ install_deps_macos() {
         local pkg="${brew_deps[$i]}"
         if [ "$name" = "handbrake" ]; then
             if command -v HandBrakeCLI >/dev/null 2>&1; then
-                ok "HandBrakeCLI already installed"
+                # Verify it actually works (not broken deps)
+                if HandBrakeCLI --version 2>&1 | grep -q "Library not loaded"; then
+                    warn "HandBrakeCLI has broken dependencies, reinstalling..."
+                    brew reinstall svt-av1 handbrake 2>/dev/null || true
+                else
+                    ok "HandBrakeCLI already installed and working"
+                fi
             else
                 info "Installing HandBrakeCLI..."
-                brew install --cask handbrake 2>/dev/null || brew install handbrake-cli 2>/dev/null || {
+                brew install handbrake 2>/dev/null || brew install --cask handbrake 2>/dev/null || {
                     warn "Could not auto-install HandBrakeCLI"
                     warn "Please install manually: https://handbrake.fr/downloads2.php"
                 }
