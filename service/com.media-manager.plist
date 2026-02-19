@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.media-manager</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>__INSTALL_DIR__/bin/media-manager</string>
+        <string>start</string>
+        <string>-c</string>
+        <string>__CONFIG_DIR__/media-manager.conf</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__LOG_DIR__/media-manager.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>__LOG_DIR__/media-manager.stderr.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>

@@ -1,0 +1,49 @@
+# Media Manager Configuration
+# Copy this file to media-manager.conf and edit to your needs
+
+# ---------- Quality Profile ----------
+# Profile name (for display only)
+PROFILE_NAME="Netflix-ish"
+
+# Video bitrate targets in kbps per resolution
+VB2160=12000
+VB1080=6000
+VB720=3000
+
+# ---------- Encoding Settings ----------
+# VideoToolbox preset (macOS only): fast | balanced | quality
+VT_PRESET="quality"
+
+# x265 software preset (fallback / Linux): ultrafast | superfast | veryfast | faster | fast | medium | slow | slower | veryslow
+X265_PRESET="slow"
+
+# Bitrate tolerance percentage - skip encoding if already within this range
+TOL_PCT=5
+
+# ---------- File Management ----------
+# Delete original files after successful encoding: yes | no
+DELETE_ORIGINALS="no"
+
+# ---------- Service Settings ----------
+# Seconds between directory scans
+SCAN_INTERVAL=300
+
+# Enable logging to file
+ENABLE_LOGGING="true"
+
+# Log file path (directory will be created if needed)
+LOG_FILE="/Users/ronald/Developer/PlexScripts/logs/media-manager.log"
+
+# ---------- Watch Directories ----------
+# Format: "path|type" where type is: movies, series, or auto
+# Use "auto" to let the service detect the media type automatically
+# Examples:
+#   WATCH_DIRS=(
+#     "/Volumes/Media/Movies|movies"
+#     "/Volumes/Media/TV Shows|series"
+#     "/Volumes/Media/Downloads|auto"
+#   )
+WATCH_DIRS=(
+    "/path/to/your/movies|movies"
+    "/path/to/your/series|series"
+)

@@ -1,0 +1,22 @@
+# Configuration (contains user paths/settings)
+config/media-manager.conf
+
+# Environment
+.env
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Old scripts (archived)

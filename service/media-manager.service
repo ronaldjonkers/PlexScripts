@@ -1,0 +1,16 @@
+[Unit]
+Description=Media Manager - Automatic video encoding and renaming service
+After=network.target local-fs.target
+
+[Service]
+Type=simple
+ExecStart=__INSTALL_DIR__/bin/media-manager start -c __CONFIG_DIR__/media-manager.conf
+ExecStop=__INSTALL_DIR__/bin/media-manager stop
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=default.target

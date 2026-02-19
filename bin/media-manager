@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+# Media Manager - Continuous media processing service
+# Watches directories for video files, encodes and renames them
+# Version: 1.0.0
+
+set -euo pipefail
+export LC_ALL=C
+
+# ---------- Resolve paths ----------
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+CONFIG_FILE="${MEDIA_MANAGER_CONFIG:-${PROJECT_DIR}/config/media-manager.conf}"
+
+# ---------- Source libraries ----------
+source "${PROJECT_DIR}/lib/utils.sh"
+source "${PROJECT_DIR}/lib/naming.sh"
+source "${PROJECT_DIR}/lib/encoding.sh"
+
+# ---------- Default settings ----------
+SCAN_INTERVAL="${SCAN_INTERVAL:-300}"
+DELETE_ORIGINALS="${DELETE_ORIGINALS:-no}"
+TOL_PCT="${TOL_PCT:-5}"
+VT_PRESET="${VT_PRESET:-quality}"
+X265_PRESET="${X265_PRESET:-slow}"
+VB2160="${VB2160:-12000}"
+VB1080="${VB1080:-6000}"
+VB720="${VB720:-3000}"
+ENABLE_LOGGING="${ENABLE_LOGGING:-true}"
+LOG_FILE="${LOG_FILE:-${PROJECT_DIR}/logs/media-manager.log}"
+LOCK_FILE="${LOCK_FILE:-/tmp/media-manager.lock}"
+
+# Watch directories: "path|type" where type is movies, series, or auto
+declare -a WATCH_DIRS=()
+
+# ---------- Load config ----------
+load_config() {
+    if [ ! -f "$CONFIG_FILE" ]; then
+        log_error "Config file not found: $CONFIG_FILE"
+        log_error "Run install.sh to configure, or copy config/media-manager.conf.example"
+        exit 1
+    fi
+    source "$CONFIG_FILE"
+}
+
+# ---------- Setup logging ----------
+setup_logging() {
+    if [ "$ENABLE_LOGGING" = "true" ]; then
+        local log_dir
+        log_dir="$(dirname "$LOG_FILE")"
+        mkdir -p "$log_dir"
+        # Redirect stdout and stderr to both console and log
+        exec > >(tee -a "$LOG_FILE") 2>&1
+    fi
+}
+
+# ---------- Lock file management ----------
+acquire_lock() {
+    if [ -f "$LOCK_FILE" ]; then
+        local pid
+        pid="$(cat "$LOCK_FILE" 2>/dev/null)"
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            log_error "Another instance is already running (PID: $pid)"
+            exit 1
+        fi
+        log_warn "Stale lock file found, removing"
+        rm -f "$LOCK_FILE"
+    fi
+    echo $$ > "$LOCK_FILE"
+}
+
+release_lock() {
+    rm -f "$LOCK_FILE"
+}
+
+# ---------- Graceful shutdown ----------
+cleanup() {
+    log_info "Shutting down Media Manager..."
+    release_lock
+    exit 0
+}
+trap cleanup SIGTERM SIGINT SIGHUP
+
+# ---------- Scan a single directory ----------
+scan_directory() {
+    local watch_entry="$1"
+    local dir type
+
+    # Parse "path|type" format
+    dir="$(echo "$watch_entry" | cut -d'|' -f1)"
+    type="$(echo "$watch_entry" | cut -d'|' -f2)"
+
+    # Trim whitespace
+    dir="$(echo "$dir" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    type="$(echo "$type" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+
+    if [ ! -d "$dir" ]; then
+        log_warn "Directory not found, skipping: $dir"
+        return 0
+    fi
+
+    # Auto-detect media type if set to "auto"
+    if [ "$type" = "auto" ] || [ -z "$type" ]; then
+        type="$(detect_media_type "$dir")"
+        log_info "Auto-detected type for $dir: $type"
+    fi
+
+    log_info "Scanning: $dir (type: $type)"
+
+    local count=0
+    while IFS= read -r -d '' f; do
+        # Skip files that are already tagged with our format
+        if is_already_tagged "$f"; then
+            continue
+        fi
+
+        # Skip files currently being written (modified in last 30 seconds)
+        local mod_age
+        if [ "$(detect_os)" = "macos" ]; then
+            mod_age=$(( $(date +%s) - $(stat -f %m -- "$f" 2>/dev/null || echo 0) ))
+        else
+            mod_age=$(( $(date +%s) - $(stat -c %Y -- "$f" 2>/dev/null || echo 0) ))
+        fi
+        if [ "$mod_age" -lt 30 ]; then
+            log_info "  Skipping (still being written): $(basename "$f")"
+            continue
+        fi
+
+        process_file "$f" "$type" || {
+            log_error "  Failed to process: $(basename "$f")"
+            continue
+        }
+        count=$(( count + 1 ))
+    done < <(find "$dir" -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.mov" -o -iname "*.avi" -o -iname "*.m4v" -o -iname "*.wmv" \) -print0 2>/dev/null)
+
+    [ "$count" -gt 0 ] && log_info "Processed $count files in $dir"
+}
+
+# ---------- Main scan loop ----------
+run_scan() {
+    log_info "Starting scan cycle..."
+    for entry in "${WATCH_DIRS[@]}"; do
+        scan_directory "$entry"
+    done
+    log_info "Scan cycle complete"
+}
+
+# ---------- Usage ----------
+usage() {
+    cat <<EOF
+Media Manager v1.0.0 - Continuous media processing service
+
+Usage: $(basename "$0") [command] [options]
+
+Commands:
+  start       Start the service in daemon mode (default)
+  scan        Run a single scan and exit
+  status      Check if the service is running
+  stop        Stop the running service
+
+Options:
+  -c, --config FILE   Path to config file
+  -h, --help          Show this help message
+  -v, --version       Show version
+
+EOF
+}
+
+# ---------- Command handlers ----------
+cmd_start() {
+    load_config
+    setup_logging
+    acquire_lock
+
+    log_info "=========================================="
+    log_info "Media Manager v1.0.0 starting"
+    log_info "Profile: ${PROFILE_NAME:-Custom}"
+    log_info "Quality: 2160p=${VB2160}kbps 1080p=${VB1080}kbps 720p=${VB720}kbps"
+    log_info "Scan interval: ${SCAN_INTERVAL}s"
+    log_info "Delete originals: ${DELETE_ORIGINALS}"
+    log_info "Watch directories: ${#WATCH_DIRS[@]}"
+    for entry in "${WATCH_DIRS[@]}"; do
+        log_info "  → $entry"
+    done
+    log_info "=========================================="
+
+    # Verify dependencies
+    need HandBrakeCLI || exit 1
+    need ffprobe || exit 1
+    need python3 || exit 1
+
+    while true; do
+        run_scan
+        log_info "Next scan in ${SCAN_INTERVAL} seconds..."
+        sleep "$SCAN_INTERVAL" &
+        wait $!
+    done
+}
+
+cmd_scan() {
+    load_config
+    setup_logging
+
+    log_info "Running single scan..."
+    need HandBrakeCLI || exit 1
+    need ffprobe || exit 1
+    need python3 || exit 1
+
+    run_scan
+    log_info "Done."
+}
+
+cmd_status() {
+    if [ -f "$LOCK_FILE" ]; then
+        local pid
+        pid="$(cat "$LOCK_FILE" 2>/dev/null)"
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo "Media Manager is running (PID: $pid)"
+            return 0
+        fi
+        echo "Media Manager is not running (stale lock file)"
+        return 1
+    fi
+    echo "Media Manager is not running"
+    return 1
+}
+
+cmd_stop() {
+    if [ -f "$LOCK_FILE" ]; then
+        local pid
+        pid="$(cat "$LOCK_FILE" 2>/dev/null)"
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            log_info "Stopping Media Manager (PID: $pid)..."
+            kill "$pid"
+            rm -f "$LOCK_FILE"
+            log_info "Stopped."
+            return 0
+        fi
+    fi
+    echo "Media Manager is not running"
+    return 1
+}
+
+# ---------- Parse arguments ----------
+COMMAND="start"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        start|scan|status|stop)
+            COMMAND="$1"
+            shift
+            ;;
+        -c|--config)
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -v|--version)
+            echo "Media Manager v1.0.0"
+            exit 0
+            ;;
+        *)
+            log_error "Unknown argument: $1"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# ---------- Execute ----------
+case "$COMMAND" in
+    start)  cmd_start  ;;
+    scan)   cmd_scan   ;;
+    status) cmd_status ;;
+    stop)   cmd_stop   ;;
+esac
