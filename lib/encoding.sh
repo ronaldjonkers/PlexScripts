@@ -232,6 +232,8 @@ process_file() {
         if [ "$file" = "$out_encode" ] || [ ! -f "$out_encode" ]; then
             return 0
         fi
+        # External subtitles belong to the encoded file from here on
+        move_sidecars "$file" "$out_encode"
         if [ "$delete_original" = "yes" ] || [ "$delete_original" = "y" ]; then
             log_info "  [DEL] Removed original"
             rm -f -- "$file"

@@ -31,6 +31,10 @@ DELETE_ORIGINALS="no"
 #   skip      - touch nothing, only log a warning
 DUPLICATE_ACTION="keep_best"
 
+# External subtitle sidecars that are renamed along with the video.
+# Space separated list of extensions; add "nfo" to move metadata files too.
+SIDECAR_EXTS="srt sub idx ass ssa vtt smi sup"
+
 # ---------- Service Settings ----------
 # Seconds between directory scans
 SCAN_INTERVAL=300

@@ -16,6 +16,9 @@ Format follows [Semantic Versioning](https://semver.org/).
   re-encoded on every single scan
 
 ### Added
+- **External subtitles follow the video** — `.srt`/`.sub`/`.idx`/… sidecars are renamed along with
+  the file on rename and after encoding, and are rescued from a duplicate before it is cleaned up,
+  so Plex never ends up with orphaned subtitles. Configurable via `SIDECAR_EXTS`.
 - `lib/dedupe.sh` — duplicate detection and resolution:
   identical content via a cheap size + head/tail fingerprint, quality ranking by
   resolution → bitrate policy compliance → bitrate
@@ -23,7 +26,8 @@ Format follows [Semantic Versioning](https://semver.org/).
   `.duplicates` folder) or `skip` (only warn)
 - Duplicates between two already-tagged copies of the same title are resolved as well
 - Hidden directories (such as `.duplicates`) are pruned from scans
-- `tests/test_dedupe.sh` — 34 tests for duplicate detection, ranking, disposal and safe renaming
+- `tests/test_dedupe.sh` — 46 tests for duplicate detection, ranking, disposal, safe renaming and
+  subtitle sidecar handling
 
 ## [1.0.4] - 2026-02-19
 

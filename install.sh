@@ -371,6 +371,9 @@ DELETE_ORIGINALS="${DELETE_ORIGINALS}"
 # Duplicate handling: keep_best (delete lesser copy) | trash (.duplicates folder) | skip
 DUPLICATE_ACTION="${DUPLICATE_ACTION}"
 
+# External subtitle sidecars that follow the video on rename
+SIDECAR_EXTS="srt sub idx ass ssa vtt smi sup"
+
 # ---------- Service Settings ----------
 SCAN_INTERVAL=${SCAN_INTERVAL}
 ENABLE_LOGGING="true"

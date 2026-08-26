@@ -185,6 +185,93 @@ assert_eq "Collision, target wins: target untouched" \
 assert_eq "Collision, target wins: duplicate gone (no endless rename)" "no" "$r"
 
 echo ""
+echo "=== Testing find_sidecars ==="
+
+mkdir -p "$TMP/subs"
+: > "$TMP/subs/Movie (2020).mkv"
+: > "$TMP/subs/Movie (2020).nl.srt"
+: > "$TMP/subs/Movie (2020).en.forced.srt"
+: > "$TMP/subs/Movie (2020).idx"
+: > "$TMP/subs/Movie (2020).sub"
+: > "$TMP/subs/Movie (2020).jpg"
+: > "$TMP/subs/Other Movie (2020).nl.srt"
+
+assert_eq "Finds every subtitle sidecar, ignores other files" \
+    "$TMP/subs/Movie (2020).en.forced.srt
+$TMP/subs/Movie (2020).idx
+$TMP/subs/Movie (2020).nl.srt
+$TMP/subs/Movie (2020).sub" \
+    "$(find_sidecars "$TMP/subs/Movie (2020).mkv" | sort)"
+
+# A tagged video's subtitles must not be claimed by the untagged one
+: > "$TMP/subs/Tagged (2020).mkv"
+: > "$TMP/subs/Tagged (2020).1080p.6mb.mkv"
+: > "$TMP/subs/Tagged (2020).1080p.6mb.nl.srt"
+assert_eq "Tagged subtitles are not claimed by the untagged video" \
+    "" \
+    "$(find_sidecars "$TMP/subs/Tagged (2020).mkv")"
+
+assert_eq "Tagged video finds its own subtitles" \
+    "$TMP/subs/Tagged (2020).1080p.6mb.nl.srt" \
+    "$(find_sidecars "$TMP/subs/Tagged (2020).1080p.6mb.mkv")"
+
+echo ""
+echo "=== Testing subtitles following a rename ==="
+
+DUPLICATE_ACTION="keep_best"
+mkdir -p "$TMP/ren"
+printf 'video' > "$TMP/ren/Fantasia (1940).mkv"
+printf 'dutch'  > "$TMP/ren/Fantasia (1940).nl.srt"
+printf 'english' > "$TMP/ren/Fantasia (1940).en.sub"
+safe_move "$TMP/ren/Fantasia (1940).mkv" "$TMP/ren/Fantasia (1940).1080p.6mb.mkv"
+[ -e "$TMP/ren/Fantasia (1940).1080p.6mb.nl.srt" ] && r="yes" || r="no"
+assert_eq "Rename: .nl.srt follows the video" "yes" "$r"
+[ -e "$TMP/ren/Fantasia (1940).1080p.6mb.en.sub" ] && r="yes" || r="no"
+assert_eq "Rename: .en.sub follows the video" "yes" "$r"
+[ -e "$TMP/ren/Fantasia (1940).nl.srt" ] && r="yes" || r="no"
+assert_eq "Rename: no orphan left behind" "no" "$r"
+assert_eq "Rename: subtitle content is intact" "dutch" \
+    "$(cat "$TMP/ren/Fantasia (1940).1080p.6mb.nl.srt")"
+
+echo ""
+echo "=== Testing subtitles rescued from a duplicate ==="
+
+# The losing copy carries the only subtitles — they must survive
+printf 'lesser source' > "$TMP/ren/Rescue (2001).mkv"
+printf 'subs worth keeping' > "$TMP/ren/Rescue (2001).nl.srt"
+printf 'better existing copy here' > "$TMP/ren/Rescue (2001).1080p.6mb.mkv"
+stub_media "$TMP/ren/Rescue (2001).mkv" 1280 2000
+stub_media "$TMP/ren/Rescue (2001).1080p.6mb.mkv" 1920 5000
+handle_duplicate "$TMP/ren/Rescue (2001).mkv" "$TMP/ren/Rescue (2001).1080p.6mb.mkv" || true
+[ -e "$TMP/ren/Rescue (2001).mkv" ] && r="yes" || r="no"
+assert_eq "Duplicate: lesser video removed" "no" "$r"
+assert_eq "Duplicate: its subtitles moved to the winner" "subs worth keeping" \
+    "$(cat "$TMP/ren/Rescue (2001).1080p.6mb.nl.srt" 2>/dev/null)"
+
+# When the winner already has that subtitle, the loser's copy is a duplicate
+printf 'lesser source' > "$TMP/ren/Both (2002).mkv"
+printf 'old subs' > "$TMP/ren/Both (2002).nl.srt"
+printf 'better existing copy here' > "$TMP/ren/Both (2002).1080p.6mb.mkv"
+printf 'kept subs' > "$TMP/ren/Both (2002).1080p.6mb.nl.srt"
+stub_media "$TMP/ren/Both (2002).mkv" 1280 2000
+stub_media "$TMP/ren/Both (2002).1080p.6mb.mkv" 1920 5000
+handle_duplicate "$TMP/ren/Both (2002).mkv" "$TMP/ren/Both (2002).1080p.6mb.mkv" || true
+assert_eq "Duplicate: winner keeps its own subtitles" "kept subs" \
+    "$(cat "$TMP/ren/Both (2002).1080p.6mb.nl.srt")"
+[ -e "$TMP/ren/Both (2002).nl.srt" ] && r="yes" || r="no"
+assert_eq "Duplicate: redundant subtitle cleaned up" "no" "$r"
+
+# skip mode leaves subtitles alone as well
+DUPLICATE_ACTION="skip"
+printf 'x' > "$TMP/ren/Skip (2003).mkv"
+printf 'subs' > "$TMP/ren/Skip (2003).nl.srt"
+printf 'y' > "$TMP/ren/Skip (2003).1080p.6mb.mkv"
+handle_duplicate "$TMP/ren/Skip (2003).mkv" "$TMP/ren/Skip (2003).1080p.6mb.mkv" || true
+[ -e "$TMP/ren/Skip (2003).nl.srt" ] && [ -e "$TMP/ren/Skip (2003).mkv" ] && r="yes" || r="no"
+assert_eq "skip: video and subtitles both untouched" "yes" "$r"
+DUPLICATE_ACTION="keep_best"
+
+echo ""
 echo "=== Testing tag helpers ==="
 
 is_already_tagged "Movie.720p.3mb.mp4" && r="true" || r="false"

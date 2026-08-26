@@ -11,6 +11,7 @@ Built for **Plex**, **Jellyfin**, **Emby**, or any media server that benefits fr
 - **Intelligent renaming** — clean `Title (Year).Resolution.Bitrate.mkv` format for movies, `Show S01E01 Title.Resolution.Bitrate.mkv` for series
 - **Auto-detection** — automatically detects whether a directory contains movies or TV series
 - **Duplicate resolution** — when the same title exists twice, the best copy keeps the tagged name and the other one is cleaned up
+- **Subtitles follow the video** — external `.srt`/`.sub`/`.idx` sidecars are renamed along with the file, so Plex never loses them
 - **No-bloat protection** — skips encoding if the output would be larger than the source
 - **Bitrate tolerance** — skips encoding if the file is already within ±5% of the target bitrate
 - **Multiple watch directories** — monitor as many directories as you need
@@ -84,7 +85,7 @@ PlexScripts/
 ├── lib/
 │   ├── utils.sh                # Shared utilities (OS detection, ffprobe helpers)
 │   ├── encoding.sh             # Encoding logic (VideoToolbox + x265)
-│   ├── dedupe.sh               # Duplicate detection & resolution
+│   ├── dedupe.sh               # Duplicate resolution & subtitle sidecars
 │   └── naming.sh               # File naming & media type detection
 ├── config/
 │   └── media-manager.conf.example  # Example configuration
@@ -115,6 +116,7 @@ TOL_PCT=5               # Skip encoding if bitrate is within ±5%
 # File management
 DELETE_ORIGINALS="no"           # Delete source files after encoding
 DUPLICATE_ACTION="keep_best"    # Same title twice: keep_best | trash | skip
+SIDECAR_EXTS="srt sub idx ass ssa vtt smi sup"   # Sidecars that follow a rename
 
 # Service
 SCAN_INTERVAL=300       # Seconds between scans
@@ -192,7 +194,7 @@ journalctl --user -u media-manager -f
 5. **Analyze** — Resolution, bitrate, duration, and audio streams are read via `ffprobe`
 6. **Decide** — If the current bitrate is within ±5% of the target: rename only. If the estimated output would be ≥98% of the source: rename only. Otherwise: encode.
 7. **Encode** — Uses HandBrake with VideoToolbox (macOS HW) or x265 (software fallback). All audio tracks and subtitles are preserved.
-8. **Rename** — Output is named with the clean format including resolution and bitrate
+8. **Rename** — Output is named with the clean format including resolution and bitrate, and external subtitles are renamed along with it
 9. **Repeat** — Waits for the configured interval, then scans again
 
 ## Duplicate Handling
@@ -217,6 +219,22 @@ What happens to the losing copy is set by `DUPLICATE_ACTION`:
 Two tagged copies of the same title (e.g. `.1080p.6mb.mkv` next to `.720p.3mb.mkv`) are resolved
 the same way. When `DELETE_ORIGINALS="no"`, an encoded source is renamed to `Name.original.ext`
 so it is never picked up and re-encoded again.
+
+## External Subtitles
+
+Plex matches external subtitles on the filename stem, so a rename would orphan them:
+`Fantasia (1940).nl.srt` no longer belongs to `Fantasia (1940).1080p.6mb.mkv`. Sidecars therefore
+travel with the video everywhere it goes:
+
+| Situation | What happens to the subtitles |
+|-----------|-------------------------------|
+| Rename | `Movie (2020).nl.srt` → `Movie (2020).1080p.6mb.nl.srt` |
+| Encode | Re-attached to the encoded file (not to a kept original) |
+| Duplicate cleaned up | Moved to the copy that survives, so they are never lost with it |
+| Both copies have the same subtitle | The winner keeps its own; the redundant one follows `DUPLICATE_ACTION` |
+
+Which files count as sidecars is set by `SIDECAR_EXTS` (default `srt sub idx ass ssa vtt smi sup`).
+Add `nfo` there if you want metadata files to move along too.
 
 ## Media Type Detection
 

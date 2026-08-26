@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib/dedupe.sh - Duplicate detection and resolution for Media Manager
+# lib/dedupe.sh - Duplicate resolution and sidecar handling for Media Manager
 #
 # Problem this solves: renaming "Movie (2020).mkv" → "Movie (2020).1080p.6mb.mkv"
 # used to run through `mv -n`, which silently does nothing when the target already
@@ -8,6 +8,11 @@
 #
 # Now every collision is resolved: the best copy keeps the tagged name, the other
 # one is disposed of according to DUPLICATE_ACTION.
+#
+# External subtitles follow the video everywhere it goes. Plex matches them on the
+# filename stem, so "Movie (2020).nl.srt" has to become
+# "Movie (2020).1080p.6mb.nl.srt" the moment the video is renamed — otherwise the
+# subtitles are silently orphaned.
 
 # Regex for our own tagged filenames (any video container, not just mkv)
 TAG_REGEX='\.(2160p|1080p|720p|480p)\.[0-9]+mb\.(mkv|mp4|mov|avi|m4v|wmv|webm|flv)$'
@@ -108,6 +113,10 @@ dispose_duplicate() {
     local action="${DUPLICATE_ACTION:-keep_best}"
 
     case "$action" in
+        skip|none)
+            log_warn "  [DUP] Kept (DUPLICATE_ACTION=skip): $(basename "$f")"
+            return 1
+            ;;
         trash|quarantine)
             local trash_dir target n=1
             trash_dir="$(dirname "$f")/.duplicates"
@@ -138,6 +147,76 @@ dispose_duplicate() {
     esac
 }
 
+# Sidecar files that belong to a video and must travel with it.
+# Add more extensions here (e.g. "nfo") to move other sidecars along too.
+SIDECAR_EXTS="${SIDECAR_EXTS:-srt sub idx ass ssa vtt smi sup}"
+
+# List the sidecar files belonging to a video file.
+# A sidecar shares the video's stem and adds an optional language/flag part:
+#   "Movie (2020).mkv"  →  "Movie (2020).srt", "Movie (2020).en.forced.srt"
+find_sidecars() {
+    local video="$1"
+    local dir stem cand ext suffix
+
+    dir="$(dirname "$video")"
+    stem="$(basename "${video%.*}")"
+
+    local restore_nullglob=0
+    shopt -q nullglob || restore_nullglob=1
+    shopt -s nullglob
+    for cand in "${dir}/${stem}".*; do
+        [ -f "$cand" ] || continue
+        [ "$cand" = "$video" ] && continue
+
+        # An untagged stem also matches the tagged video's own subtitles
+        # ("Movie.mkv" matches "Movie.1080p.6mb.nl.srt"). Those belong to the
+        # tagged file, not to this one.
+        suffix="${cand#"${dir}/${stem}"}"
+        if echo "$suffix" | grep -qEi '^\.(2160p|1080p|720p|480p)\.[0-9]+mb\.'; then
+            continue
+        fi
+
+        ext="$(echo "${cand##*.}" | tr '[:upper:]' '[:lower:]')"
+        case " ${SIDECAR_EXTS} " in
+            *" ${ext} "*) echo "$cand" ;;
+        esac
+    done
+    [ "$restore_nullglob" = "1" ] && shopt -u nullglob
+    return 0
+}
+
+# Re-attach a video's sidecars to another filename, so subtitles keep matching
+# after a rename, an encode, or a duplicate being cleaned up.
+# A sidecar the destination already has is a duplicate and is disposed of.
+move_sidecars() {
+    local src="$1" dst="$2"
+    local src_stem dst_stem sidecar suffix target moved=0
+
+    src_stem="${src%.*}"
+    dst_stem="${dst%.*}"
+    [ "$src_stem" = "$dst_stem" ] && return 0
+
+    while IFS= read -r sidecar; do
+        [ -n "$sidecar" ] || continue
+        suffix="${sidecar#"$src_stem"}"
+        target="${dst_stem}${suffix}"
+
+        if [ -e "$target" ]; then
+            dispose_duplicate "$sidecar" "$(basename "$dst_stem") already has this subtitle" || true
+            continue
+        fi
+
+        if mv -- "$sidecar" "$target"; then
+            moved=$(( moved + 1 ))
+        else
+            log_warn "  [SUB] Could not move: $(basename "$sidecar")"
+        fi
+    done < <(find_sidecars "$src")
+
+    [ "$moved" -gt 0 ] && log_info "  [SUB] Moved ${moved} subtitle file(s) along"
+    return 0
+}
+
 # Resolve a duplicate pair.
 # Args: candidate (the file being processed) existing (the copy already in place)
 # Returns 0 when the candidate survives and processing should continue,
@@ -158,17 +237,20 @@ handle_duplicate() {
 
     # Byte-identical copies: keep the one already carrying the tag
     if files_identical "$candidate" "$existing"; then
+        move_sidecars "$candidate" "$existing"
         dispose_duplicate "$candidate" "identical to $(basename "$existing")" || return 1
         return 1
     fi
 
     if [ "$(pick_best "$candidate" "$existing")" = "1" ]; then
         log_info "  [DUP] Keeping $(basename "$candidate") (better quality)"
+        move_sidecars "$existing" "$candidate"
         dispose_duplicate "$existing" "lower quality than $(basename "$candidate")" || return 1
         return 0
     fi
 
     log_info "  [DUP] Keeping $(basename "$existing") (better quality)"
+    move_sidecars "$candidate" "$existing"
     dispose_duplicate "$candidate" "lower quality than $(basename "$existing")" || return 1
     return 1
 }
@@ -212,6 +294,7 @@ safe_move() {
     log_info "  [RENAME] $(basename "$src")"
     log_info "       →   $(basename "$dst")"
     if mv -- "$src" "$dst"; then
+        move_sidecars "$src" "$dst"
         return 0
     fi
     log_error "  Rename failed: $src → $dst"
