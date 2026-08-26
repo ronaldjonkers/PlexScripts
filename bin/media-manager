@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Media Manager - Continuous media processing service
 # Watches directories for video files, encodes and renames them
-# Version: 1.0.0
+# Version: 1.1.0
 
 set -euo pipefail
 export LC_ALL=C
@@ -14,6 +14,7 @@ CONFIG_FILE="${MEDIA_MANAGER_CONFIG:-${PROJECT_DIR}/config/media-manager.conf}"
 # ---------- Source libraries ----------
 source "${PROJECT_DIR}/lib/utils.sh"
 source "${PROJECT_DIR}/lib/naming.sh"
+source "${PROJECT_DIR}/lib/dedupe.sh"
 source "${PROJECT_DIR}/lib/encoding.sh"
 
 # ---------- Runtime flags ----------
@@ -22,6 +23,7 @@ VERBOSE="${VERBOSE:-false}"
 # ---------- Default settings ----------
 SCAN_INTERVAL="${SCAN_INTERVAL:-300}"
 DELETE_ORIGINALS="${DELETE_ORIGINALS:-no}"
+DUPLICATE_ACTION="${DUPLICATE_ACTION:-keep_best}"
 TOL_PCT="${TOL_PCT:-5}"
 VT_PRESET="${VT_PRESET:-quality}"
 X265_PRESET="${X265_PRESET:-slow}"
@@ -111,8 +113,15 @@ scan_directory() {
 
     local count=0
     while IFS= read -r -d '' f; do
-        # Skip files that are already tagged with our format
+        # Originals parked after an encode are never reprocessed
+        if is_kept_original "$f"; then
+            continue
+        fi
+
+        # Already tagged: nothing to encode or rename, but the title may still
+        # have a second tagged copy lying around — resolve that.
         if is_already_tagged "$f"; then
+            dedupe_tagged_file "$f"
             continue
         fi
 
@@ -133,7 +142,9 @@ scan_directory() {
             continue
         }
         count=$(( count + 1 ))
-    done < <(find "$dir" -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.mov" -o -iname "*.avi" -o -iname "*.m4v" -o -iname "*.wmv" \) -print0 2>/dev/null)
+    done < <(find "$dir" \
+        -type d -name ".*" -prune -o \
+        -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.mov" -o -iname "*.avi" -o -iname "*.m4v" -o -iname "*.wmv" \) -print0 2>/dev/null)
 
     [ "$count" -gt 0 ] && log_info "Processed $count files in $dir"
 }
@@ -150,7 +161,7 @@ run_scan() {
 # ---------- Usage ----------
 usage() {
     cat <<EOF
-Media Manager v1.0.2 - Continuous media processing service
+Media Manager v1.1.0 - Continuous media processing service
 
 Usage: $(basename "$0") [command] [options]
 
@@ -181,12 +192,13 @@ cmd_start() {
     acquire_lock
 
     log_info "=========================================="
-    log_info "Media Manager v1.0.2 starting"
+    log_info "Media Manager v1.1.0 starting"
     log_info "Verbose mode: ${VERBOSE}"
     log_info "Profile: ${PROFILE_NAME:-Custom}"
     log_info "Quality: 2160p=${VB2160}kbps 1080p=${VB1080}kbps 720p=${VB720}kbps"
     log_info "Scan interval: ${SCAN_INTERVAL}s"
     log_info "Delete originals: ${DELETE_ORIGINALS}"
+    log_info "Duplicate action: ${DUPLICATE_ACTION}"
     log_info "Watch directories: ${#WATCH_DIRS[@]}"
     for entry in "${WATCH_DIRS[@]}"; do
         log_info "  → $entry"
@@ -281,7 +293,7 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         -v|--version)
-            echo "Media Manager v1.0.2"
+            echo "Media Manager v1.1.0"
             exit 0
             ;;
         *)

@@ -303,6 +303,15 @@ configure_settings() {
         DELETE_ORIGINALS="no"
     fi
 
+    # Duplicate handling
+    echo -e "\nWhen the same title exists twice: ${BOLD}1)${NC} keep the best copy  ${BOLD}2)${NC} move the other to .duplicates  ${BOLD}3)${NC} only warn"
+    read -p "$(echo -e "${BOLD}Choose [1-3, default=1]:${NC} ")" -r dup_choice
+    case "$dup_choice" in
+        2) DUPLICATE_ACTION="trash" ;;
+        3) DUPLICATE_ACTION="skip"  ;;
+        *) DUPLICATE_ACTION="keep_best" ;;
+    esac
+
     # Scan interval
     read -p "$(echo -e "${BOLD}Scan interval in seconds [300]:${NC} ")" -r SCAN_INTERVAL
     SCAN_INTERVAL="${SCAN_INTERVAL:-300}"
@@ -358,6 +367,9 @@ TOL_PCT=5
 
 # ---------- File Management ----------
 DELETE_ORIGINALS="${DELETE_ORIGINALS}"
+
+# Duplicate handling: keep_best (delete lesser copy) | trash (.duplicates folder) | skip
+DUPLICATE_ACTION="${DUPLICATE_ACTION}"
 
 # ---------- Service Settings ----------
 SCAN_INTERVAL=${SCAN_INTERVAL}

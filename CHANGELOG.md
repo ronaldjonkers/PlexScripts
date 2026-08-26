@@ -3,6 +3,28 @@
 All notable changes to this project will be documented in this file.
 Format follows [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-08-26
+
+### Fixed
+- **Endless renames / duplicate files** — renaming used `mv -n`, which silently does nothing when the
+  target already exists. The source kept its old name, so every scan logged the same `[RENAME]` again
+  and the library filled up with duplicate pairs. Every collision is now resolved explicitly.
+- Rename-only passes keep the source container (`.mp4` stays `.mp4`) instead of being relabelled as
+  `.mkv` without remuxing
+- `is_already_tagged()` now recognises tagged files in any container, not just `.mkv`
+- With `DELETE_ORIGINALS="no"` an encoded source is parked as `Name.original.ext`, so it is no longer
+  re-encoded on every single scan
+
+### Added
+- `lib/dedupe.sh` — duplicate detection and resolution:
+  identical content via a cheap size + head/tail fingerprint, quality ranking by
+  resolution → bitrate policy compliance → bitrate
+- `DUPLICATE_ACTION` setting: `keep_best` (delete lesser copy, default), `trash` (move it to a
+  `.duplicates` folder) or `skip` (only warn)
+- Duplicates between two already-tagged copies of the same title are resolved as well
+- Hidden directories (such as `.duplicates`) are pruned from scans
+- `tests/test_dedupe.sh` — 34 tests for duplicate detection, ranking, disposal and safe renaming
+
 ## [1.0.4] - 2026-02-19
 
 ### Fixed

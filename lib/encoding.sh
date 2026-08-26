@@ -124,7 +124,27 @@ encode_file() {
     return 1
 }
 
-# Process a single media file: analyze, rename, encode if needed
+# Move an original aside after a successful encode (DELETE_ORIGINALS=no).
+# Without this the untagged original would be picked up and re-encoded on every
+# single scan, forever.
+park_original() {
+    local f="$1"
+    local ext="${f##*.}" stem="${f%.*}"
+    local target="${stem}.original.${ext}" n=1
+
+    while [ -e "$target" ]; do
+        target="${stem}.original.${n}.${ext}"
+        n=$(( n + 1 ))
+    done
+
+    if mv -- "$f" "$target"; then
+        log_info "  [KEEP] Original kept as: $(basename "$target")"
+    else
+        log_warn "  Could not park original: $(basename "$f")"
+    fi
+}
+
+# Process a single media file: resolve duplicates, analyze, rename, encode if needed
 # Args: file_path media_type(movies|series)
 process_file() {
     local file="$1"
@@ -137,6 +157,15 @@ process_file() {
     log_sep
     log_info "Processing: $file"
 
+    # Resolve duplicates FIRST, before spending time on probing or encoding.
+    # If this title already has a tagged copy, only one of the two survives.
+    local sibling
+    while IFS= read -r sibling; do
+        [ -n "$sibling" ] || continue
+        handle_duplicate "$file" "$sibling" || return 0
+        [ -f "$file" ] || return 0
+    done < <(find_tagged_siblings "$file")
+
     # Get video properties
     local geom w res target_vb
     geom="$(get_resolution "$file")" || geom="0x0"
@@ -147,9 +176,11 @@ process_file() {
     res="$(resolution_label "$w")"
     target_vb="$(target_bitrate "$res")"
 
-    # Generate output filename
-    local out
-    out="$(generate_filename "$file" "$res" "$target_vb" "$media_type")"
+    # Two output names: a rename keeps the source container, an encode writes mkv
+    local src_ext out_rename out_encode
+    src_ext="$(echo "${file##*.}" | tr '[:upper:]' '[:lower:]')"
+    out_rename="$(generate_filename "$file" "$res" "$target_vb" "$media_type" "$src_ext")"
+    out_encode="$(generate_filename "$file" "$res" "$target_vb" "$media_type" "mkv")"
 
     # Measure current bitrate
     local v_meas
@@ -165,13 +196,11 @@ process_file() {
         else
             log_skip "  Bitrate within ${tol}% tolerance of target"
         fi
-        if [ "$file" != "$out" ]; then
-            log_info "  [RENAME] $(basename "$file")"
-            log_info "       →   $(basename "$out")"
-            mv -n -- "$file" "$out"
-        else
+        if [ "$file" = "$out_rename" ]; then
             log_skip "  Already correct name and bitrate"
+            return 0
         fi
+        safe_move "$file" "$out_rename" || return 0
         return 0
     fi
 
@@ -187,25 +216,31 @@ process_file() {
 
     if [ "$est" -ge "$limit" ]; then
         log_skip "  No-bloat: estimated output >= 98% of source, rename only"
-        if [ "$out" != "$file" ]; then
-            log_info "  [RENAME] $(basename "$file")"
-            log_info "       →   $(basename "$out")"
-            mv -n -- "$file" "$out"
+        if [ "$file" != "$out_rename" ]; then
+            safe_move "$file" "$out_rename" || return 0
         fi
         return 0
     fi
 
+    # A leftover at the encode target would silently be overwritten — resolve it
+    if [ -e "$out_encode" ] && [ "$out_encode" != "$file" ]; then
+        handle_duplicate "$file" "$out_encode" || return 0
+    fi
+
     # Encode
-    if encode_file "$file" "$target_vb" "$out"; then
+    if encode_file "$file" "$target_vb" "$out_encode"; then
+        if [ "$file" = "$out_encode" ] || [ ! -f "$out_encode" ]; then
+            return 0
+        fi
         if [ "$delete_original" = "yes" ] || [ "$delete_original" = "y" ]; then
-            if [ "$file" != "$out" ] && [ -f "$out" ]; then
-                log_info "  [DEL] Removed original"
-                rm -f -- "$file"
-            fi
+            log_info "  [DEL] Removed original"
+            rm -f -- "$file"
+        else
+            park_original "$file"
         fi
     else
         # Clean up failed output
-        [ -f "$out" ] && [ "$file" != "$out" ] && rm -f -- "$out"
+        [ -f "$out_encode" ] && [ "$file" != "$out_encode" ] && rm -f -- "$out_encode"
         return 1
     fi
 }

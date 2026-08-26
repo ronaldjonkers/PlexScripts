@@ -24,6 +24,13 @@ TOL_PCT=5
 # Delete original files after successful encoding: yes | no
 DELETE_ORIGINALS="no"
 
+# What to do when the same title exists twice (e.g. "Movie.mkv" and
+# "Movie.1080p.6mb.mkv"). The best copy always keeps the tagged name.
+#   keep_best - delete the lesser copy (default)
+#   trash     - move the lesser copy to a .duplicates folder next to it
+#   skip      - touch nothing, only log a warning
+DUPLICATE_ACTION="keep_best"
+
 # ---------- Service Settings ----------
 # Seconds between directory scans
 SCAN_INTERVAL=300

@@ -51,9 +51,11 @@ strip_media_tags() {
 # Generate the correct output filename
 # Movies:  "Title (Year).Resolution.Bitrate_mb.mkv"
 # Series:  "Show S01E01 Episode.Resolution.Bitrate_mb.mkv"
-# Args: source_file resolution target_vb_kbps media_type
+# Args: source_file resolution target_vb_kbps media_type [extension]
+# The extension defaults to mkv (what the encoder writes). Rename-only paths pass
+# the source extension, so an .mp4 is not relabelled as .mkv without remuxing.
 generate_filename() {
-    local f="$1" res="$2" vb="$3" media_type="$4"
+    local f="$1" res="$2" vb="$3" media_type="$4" ext="${5:-mkv}"
     local dir base mb
 
     dir="$(dirname "$f")"
@@ -70,5 +72,5 @@ generate_filename() {
     # Calculate MB label from kbps
     mb=$(( (vb + 500) / 1000 ))
 
-    echo "${dir}/${base}.${res}.${mb}mb.mkv"
+    echo "${dir}/${base}.${res}.${mb}mb.${ext}"
 }

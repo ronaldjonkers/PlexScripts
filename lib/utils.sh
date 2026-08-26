@@ -157,9 +157,19 @@ is_video_file() {
     esac
 }
 
-# Check if a file has already been processed (has our naming tag)
+# Check if a file has already been processed (has our naming tag).
+# Matches any video container: a rename-only pass keeps the source extension,
+# so "Movie.720p.3mb.mp4" must count as tagged too.
 is_already_tagged() {
     local base
     base="$(basename "$1")"
-    echo "$base" | grep -qE '\.(2160p|1080p|720p|480p)\.[0-9]+mb\.mkv$'
+    echo "$base" | grep -qEi '\.(2160p|1080p|720p|480p)\.[0-9]+mb\.(mkv|mp4|mov|avi|m4v|wmv|webm|flv)$'
+}
+
+# Check if a file is an original kept behind after a successful encode
+# (see DELETE_ORIGINALS=no). These must never be processed again.
+is_kept_original() {
+    local base
+    base="$(basename "$1")"
+    echo "$base" | grep -qEi '\.original\.[a-z0-9]+$'
 }
