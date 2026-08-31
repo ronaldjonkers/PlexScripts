@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Media Manager - Continuous media processing service
 # Watches directories for video files, encodes and renames them
-# Version: 1.1.0
+# Version: 1.2.0
 
 set -euo pipefail
 export LC_ALL=C
@@ -11,11 +11,19 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="${MEDIA_MANAGER_CONFIG:-${PROJECT_DIR}/config/media-manager.conf}"
 
+# ---------- Load environment (.env holds secrets like TMDB_API_TOKEN) ----------
+if [ -f "${PROJECT_DIR}/.env" ]; then
+    set -a
+    source "${PROJECT_DIR}/.env"
+    set +a
+fi
+
 # ---------- Source libraries ----------
 source "${PROJECT_DIR}/lib/utils.sh"
 source "${PROJECT_DIR}/lib/naming.sh"
 source "${PROJECT_DIR}/lib/dedupe.sh"
 source "${PROJECT_DIR}/lib/encoding.sh"
+source "${PROJECT_DIR}/lib/fixnames.sh"
 
 # ---------- Runtime flags ----------
 VERBOSE="${VERBOSE:-false}"
@@ -161,26 +169,37 @@ run_scan() {
 # ---------- Usage ----------
 usage() {
     cat <<EOF
-Media Manager v1.1.0 - Continuous media processing service
+Media Manager v1.2.0 - Continuous media processing service
 
 Usage: $(basename "$0") [command] [options]
 
 Commands:
   start       Start the service in daemon mode (default)
   scan        Run a single scan and exit
+  fix-names [PATH]  Repair library filenames (double spaces, lost dots in
+                    abbreviations, duplicate resolution tags) and verify movie
+                    titles against TMDb. PATH limits the run to one directory;
+                    without it all watch directories are processed.
   status      Check if the service is running
   stop        Stop the running service
 
 Options:
   -c, --config FILE   Path to config file
+  -n, --dry-run       fix-names only: show what would be renamed, change nothing
+      --no-tmdb       fix-names only: skip TMDb verification (mechanical fixes only)
   -V, --verbose       Show full HandBrakeCLI output (useful for debugging)
   -h, --help          Show this help message
   -v, --version       Show version
 
 Examples:
-  $(basename "$0") start                   # Start as background service
+  $(basename "$0") start                    # Start as background service
   $(basename "$0") scan --verbose           # Single scan with full encoder output
-  $(basename "$0") start -V                 # Daemon mode with verbose encoder output
+  $(basename "$0") fix-names --dry-run      # Preview filename repairs
+  $(basename "$0") fix-names                # Repair all watched directories
+  $(basename "$0") fix-names /Volumes/Plex/Films  # Repair one directory
+
+TMDb verification needs TMDB_API_TOKEN in ${PROJECT_DIR}/.env
+(copy .env.example and fill in your token from themoviedb.org).
 
 EOF
 }
@@ -192,7 +211,7 @@ cmd_start() {
     acquire_lock
 
     log_info "=========================================="
-    log_info "Media Manager v1.1.0 starting"
+    log_info "Media Manager v1.2.0 starting"
     log_info "Verbose mode: ${VERBOSE}"
     log_info "Profile: ${PROFILE_NAME:-Custom}"
     log_info "Quality: 2160p=${VB2160}kbps 1080p=${VB1080}kbps 720p=${VB720}kbps"
@@ -255,6 +274,16 @@ cmd_status() {
     return 1
 }
 
+cmd_fix_names() {
+    load_config
+    setup_logging
+
+    need python3 || exit 1
+    log_info "Running filename repair..."
+    run_fix_names "${DRY_RUN:-false}" "${FIX_PATH:-}"
+    log_info "Done."
+}
+
 cmd_stop() {
     if [ -f "$LOCK_FILE" ]; then
         local pid
@@ -273,16 +302,26 @@ cmd_stop() {
 
 # ---------- Parse arguments ----------
 COMMAND="start"
+DRY_RUN="false"
+FIX_PATH=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        start|scan|status|stop)
+        start|scan|fix-names|status|stop)
             COMMAND="$1"
             shift
             ;;
         -c|--config)
             CONFIG_FILE="$2"
             shift 2
+            ;;
+        -n|--dry-run)
+            DRY_RUN="true"
+            shift
+            ;;
+        --no-tmdb)
+            export NO_TMDB=1
+            shift
             ;;
         -h|--help)
             usage
@@ -293,21 +332,27 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         -v|--version)
-            echo "Media Manager v1.1.0"
+            echo "Media Manager v1.2.0"
             exit 0
             ;;
         *)
-            log_error "Unknown argument: $1"
-            usage
-            exit 1
+            if [ "$COMMAND" = "fix-names" ] && [ -d "$1" ]; then
+                FIX_PATH="$1"
+                shift
+            else
+                log_error "Unknown argument: $1"
+                usage
+                exit 1
+            fi
             ;;
     esac
 done
 
 # ---------- Execute ----------
 case "$COMMAND" in
-    start)  cmd_start  ;;
-    scan)   cmd_scan   ;;
-    status) cmd_status ;;
-    stop)   cmd_stop   ;;
+    start)     cmd_start     ;;
+    scan)      cmd_scan      ;;
+    fix-names) cmd_fix_names ;;
+    status)    cmd_status    ;;
+    stop)      cmd_stop      ;;
 esac

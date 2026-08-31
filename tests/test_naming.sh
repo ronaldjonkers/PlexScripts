@@ -64,6 +64,37 @@ assert_eq "Strip 480p" \
     "Low Res Movie (2000)" \
     "$(strip_media_tags "Low Res Movie (2000) 480p")"
 
+assert_eq "Strip duplicated bare resolution (2160p.2160p bug)" \
+    "Movie Name (2022)" \
+    "$(strip_media_tags "Movie Name (2022).2160p.2160p")"
+
+assert_eq "Strip duplicated full tags" \
+    "Movie Name (2022)" \
+    "$(strip_media_tags "Movie Name (2022).2160p.12mb.2160p.12mb")"
+
+assert_eq "Strip mixed tag then bare resolution" \
+    "Movie Name (2022)" \
+    "$(strip_media_tags "Movie Name (2022).2160p.12mb.2160p")"
+
+echo ""
+echo "=== Testing clean_title ==="
+
+assert_eq "Double space becomes ' - '" \
+    "Movie - Subtitle (2020)" \
+    "$(clean_title "Movie  Subtitle (2020)")"
+
+assert_eq "Spaced abbreviation gets dots back" \
+    "R.I.P.D. - 2 - Rise of the Damned (2022)" \
+    "$(clean_title "R I P D - 2 - Rise of the Damned (2022)")"
+
+assert_eq "Clean name untouched" \
+    "Clean Movie Name (2019)" \
+    "$(clean_title "Clean Movie Name (2019)")"
+
+assert_eq "Normal single spaces untouched" \
+    "Hansel Gretel Witch Hunters (2013)" \
+    "$(clean_title "Hansel Gretel Witch Hunters (2013)")"
+
 echo ""
 echo "=== Testing generate_filename ==="
 
@@ -97,6 +128,18 @@ assert_eq "Deep path preserved" \
 assert_eq "Movie with spaces in path" \
     "/media/My Movies/The Matrix (1999).1080p.6mb.mkv" \
     "$(generate_filename "/media/My Movies/The Matrix (1999).mkv" "1080p" "6000" "movies")"
+
+assert_eq "Movie: duplicated resolution removed" \
+    "/movies/Movie Name (2022).2160p.12mb.mkv" \
+    "$(generate_filename "/movies/Movie Name (2022).2160p.2160p.mkv" "2160p" "12000" "movies")"
+
+assert_eq "Movie: double space repaired to ' - '" \
+    "/movies/Movie - Subtitle (2020).1080p.6mb.mkv" \
+    "$(generate_filename "/movies/Movie  Subtitle (2020).mkv" "1080p" "6000" "movies")"
+
+assert_eq "Movie: abbreviation repaired" \
+    "/movies/R.I.P.D. - 2 - Rise of the Damned (2022).1080p.6mb.mkv" \
+    "$(generate_filename "/movies/R I P D - 2 - Rise of the Damned (2022).mkv" "1080p" "6000" "movies")"
 
 echo ""
 echo "=== Testing is_already_tagged ==="

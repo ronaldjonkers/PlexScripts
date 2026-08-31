@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # lib/naming.sh - File naming and media type detection for Media Manager
-# Fixes: duplicate resolution in filenames (e.g. "Movie 2160p.2160p.12mb.mkv")
+# Fixes: duplicate resolution in filenames (e.g. "Movie 2160p.2160p.12mb.mkv"),
+# double spaces that used to be " - ", and abbreviations that lost their dots
+# ("R I P D" → "R.I.P.D."). The heavy lifting lives in lib/fix_filename.py so
+# the scan loop and the fix-names command share one implementation.
 
 # Detect if a directory contains TV series or movies
 # Returns: "series" or "movies"
@@ -38,14 +41,28 @@ detect_media_type() {
 #   "Movie Name 1080p"                  → "Movie Name"
 strip_media_tags() {
     local base="$1"
-    # Step 1: Remove .RES.XXmb suffix (our own tagging format)
-    base="$(echo "$base" | sed -E 's/\.(2160p|1080p|720p|480p)\.[0-9]+mb$//')"
-    # Step 2: Remove trailing resolution tag with space or dot separator
-    #         e.g. " 2160p" or ".2160p" at end of name
-    base="$(echo "$base" | sed -E 's/[. ](2160p|1080p|720p|480p)$//')"
+    # Steps 1+2: Remove .RES.XXmb suffixes (our own tagging format) and bare
+    # trailing resolution tags, repeated until stable — "Movie.2160p.2160p"
+    # and "Movie.2160p.12mb.2160p" must lose every copy
+    local prev=""
+    while [ "$base" != "$prev" ]; do
+        prev="$base"
+        base="$(echo "$base" | sed -E 's/(\.(2160p|1080p|720p|480p)\.[0-9]+mb)+$//')"
+        base="$(echo "$base" | sed -E 's/([. ](2160p|1080p|720p|480p))+$//')"
+    done
     # Step 3: Remove common quality tags that might be in source filenames
     base="$(echo "$base" | sed -E 's/[. ](BluRay|BRRip|WEBRip|WEB-DL|HDRip|DVDRip|REMUX|HEVC|x264|x265|H\.?264|H\.?265|AAC|DTS|10bit|HDR|SDR|DDP5\.?1|DD5\.?1|Atmos)//gI')"
     echo "$base"
+}
+
+# Mechanical title repair, shared with the fix-names command:
+#   "Movie  Subtitle"  → "Movie - Subtitle"   (double space = lost " - ")
+#   "R I P D - 2"      → "R.I.P.D. - 2"       (abbreviations get their dots back)
+# A trailing "(Year)" is preserved. Falls back to the input if python3 fails.
+clean_title() {
+    local stem="$1" cleaned
+    cleaned="$(python3 "${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/lib/fix_filename.py" --clean "$stem" 2>/dev/null)" || cleaned=""
+    [ -n "$cleaned" ] && echo "$cleaned" || echo "$stem"
 }
 
 # Generate the correct output filename
@@ -68,6 +85,9 @@ generate_filename() {
 
     # Clean up trailing dots/spaces
     base="$(echo "$base" | sed -E 's/[. ]+$//')"
+
+    # Repair double spaces and dotted abbreviations
+    base="$(clean_title "$base")"
 
     # Calculate MB label from kbps
     mb=$(( (vb + 500) / 1000 ))

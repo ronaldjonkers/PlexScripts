@@ -11,6 +11,7 @@ Built for **Plex**, **Jellyfin**, **Emby**, or any media server that benefits fr
 - **Intelligent renaming** — clean `Title (Year).Resolution.Bitrate.mkv` format for movies, `Show S01E01 Title.Resolution.Bitrate.mkv` for series
 - **Auto-detection** — automatically detects whether a directory contains movies or TV series
 - **Duplicate resolution** — when the same title exists twice, the best copy keeps the tagged name and the other one is cleaned up
+- **Filename repair with TMDb verification** — `fix-names` repairs damaged names (double spaces, `R I P D` → `R.I.P.D.`, duplicate resolution tags) and verifies movie titles against [TMDb](https://www.themoviedb.org) so Plex always recognizes them
 - **Subtitles follow the video** — external `.srt`/`.sub`/`.idx` sidecars are renamed along with the file, so Plex never loses them
 - **No-bloat protection** — skips encoding if the output would be larger than the source
 - **Bitrate tolerance** — skips encoding if the file is already within ±5% of the target bitrate
@@ -79,6 +80,7 @@ PlexScripts/
 ├── install.sh                  # Interactive installer/updater/uninstaller
 ├── README.md                   # This file
 ├── CHANGELOG.md                # Version history
+├── .env.example                # Environment template (TMDb token lives in .env)
 ├── .gitignore                  # Git ignore rules
 ├── bin/
 │   └── media-manager           # Main service executable
@@ -86,7 +88,9 @@ PlexScripts/
 │   ├── utils.sh                # Shared utilities (OS detection, ffprobe helpers)
 │   ├── encoding.sh             # Encoding logic (VideoToolbox + x265)
 │   ├── dedupe.sh               # Duplicate resolution & subtitle sidecars
-│   └── naming.sh               # File naming & media type detection
+│   ├── naming.sh               # File naming & media type detection
+│   ├── fixnames.sh             # fix-names command (library filename repair)
+│   └── fix_filename.py         # Name repair logic + TMDb title verification
 ├── config/
 │   └── media-manager.conf.example  # Example configuration
 ├── service/
@@ -94,7 +98,8 @@ PlexScripts/
 │   └── media-manager.service       # Linux systemd unit template
 └── tests/
     ├── test_naming.sh          # Unit tests for naming logic
-    └── test_dedupe.sh          # Unit tests for duplicate handling
+    ├── test_dedupe.sh          # Unit tests for duplicate handling
+    └── test_fixnames.sh        # Unit tests for filename repair
 ```
 
 ## Configuration
@@ -147,6 +152,18 @@ WATCH_DIRS=(
 # Single scan with verbose output (great for debugging)
 ./bin/media-manager scan -V
 
+# Preview filename repairs (nothing is renamed)
+./bin/media-manager fix-names --dry-run
+
+# Repair filenames in all watch directories (TMDb-verified)
+./bin/media-manager fix-names
+
+# Repair one specific directory
+./bin/media-manager fix-names /Volumes/Plex/Films
+
+# Repair without TMDb (mechanical fixes only)
+./bin/media-manager fix-names --no-tmdb
+
 # Check if the service is running
 ./bin/media-manager status
 
@@ -196,6 +213,59 @@ journalctl --user -u media-manager -f
 7. **Encode** — Uses HandBrake with VideoToolbox (macOS HW) or x265 (software fallback). All audio tracks and subtitles are preserved.
 8. **Rename** — Output is named with the clean format including resolution and bitrate, and external subtitles are renamed along with it
 9. **Repeat** — Waits for the configured interval, then scans again
+
+## Filename Repair (fix-names)
+
+Plex matches movies on the exact `Title (Year)` stem, so a damaged filename means an
+unrecognized movie. Earlier renaming passes (and sloppy download sources) left three
+kinds of damage behind, all repaired by `fix-names`:
+
+| Damage | Example | Repaired to |
+|--------|---------|-------------|
+| `" - "` collapsed into a double space | `Movie  Subtitle (2020).mkv` | `Movie - Subtitle (2020).mkv` |
+| Abbreviations lost their dots | `R I P D - 2 - Rise of the Damned (2022).1080p.6mb.mkv` | `R.I.P.D. 2 - Rise of the Damned (2022).1080p.6mb.mkv` |
+| Resolution tag duplicated | `Movie (2022).2160p.2160p.mkv` | `Movie (2022).mkv` (re-tagged on next scan) |
+
+### TMDb verification
+
+With a TMDb API token configured, every movie title is verified against
+[The Movie Database](https://www.themoviedb.org): the title and year are parsed from the
+filename, looked up, and replaced by the **official movie title** — so
+`Hansel  Gretel Witch Hunters (2013)` becomes `Hansel & Gretel - Witch Hunters (2013)`.
+Characters that are illegal in filenames are converted safely (`:` becomes ` - `).
+
+A rename is only accepted when TMDb confidently matches the title (year-anchored search
+with a similarity check) — unrecognized titles just get the mechanical fixes. Renames go
+through the same collision-safe path as the scanner, so duplicates are resolved and
+external subtitles travel along.
+
+### Setup
+
+```bash
+cp .env.example .env
+# Edit .env and set your TMDb v4 Read Access Token
+# (themoviedb.org → Settings → API → API Read Access Token):
+#   TMDB_API_TOKEN=eyJhbGci...
+```
+
+`.env` is gitignored — the token never ends up in the repository. Without a token,
+`fix-names` still runs all mechanical repairs and simply skips TMDb verification.
+
+### Recommended workflow
+
+```bash
+# 1. Always preview first
+./bin/media-manager fix-names --dry-run
+
+# 2. Happy with the plan? Run it for real
+./bin/media-manager fix-names
+
+# 3. In Plex: Library → Scan Library Files, then refresh metadata if needed
+```
+
+The regular scan loop also applies the mechanical repairs to every *new* file it
+processes, so freshly downloaded files get a clean name from the start. TMDb
+verification only runs in `fix-names` (deliberately — the scan loop stays offline).
 
 ## Duplicate Handling
 
@@ -249,6 +319,7 @@ When a directory is set to `auto`, the service detects the media type by:
 ```bash
 bash tests/test_naming.sh
 bash tests/test_dedupe.sh
+bash tests/test_fixnames.sh
 ```
 
 ## License
@@ -257,4 +328,4 @@ MIT
 
 ## Version
 
-1.1.0 — See [CHANGELOG.md](CHANGELOG.md) for history.
+1.2.0 — See [CHANGELOG.md](CHANGELOG.md) for history.

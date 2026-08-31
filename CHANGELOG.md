@@ -3,6 +3,30 @@
 All notable changes to this project will be documented in this file.
 Format follows [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-08-31
+
+### Added
+- **`fix-names` command** — repairs damaged library filenames in one pass, with `--dry-run`
+  preview, an optional directory argument, and `--no-tmdb` to skip API verification.
+  Renames go through the collision-safe dedupe path, so external subtitles travel along.
+- **TMDb title verification** — movie titles are parsed from the filename, looked up on
+  The Movie Database, and replaced by the official title (`Hansel  Gretel Witch Hunters (2013)`
+  → `Hansel & Gretel - Witch Hunters (2013)`). Only confident matches are accepted
+  (year-anchored search + similarity check); unrecognized titles get mechanical fixes only.
+  Configure `TMDB_API_TOKEN` in the new gitignored `.env` (see `.env.example`).
+- `lib/fix_filename.py` — shared name repair logic (stdlib only, no pip dependencies)
+- `tests/test_fixnames.sh` — 18 offline tests for the repair logic
+
+### Fixed
+- **Double spaces restored to `" - "`** — earlier renaming collapsed `" - "` into `"  "`,
+  breaking Plex matching. Both the scan loop and `fix-names` now repair this.
+- **Abbreviations get their dots back** — `R I P D` → `R.I.P.D.`, `S W A T` → `S.W.A.T.`
+  (two or more consecutive single capital letters)
+- **Duplicate resolution tags fully stripped** — `Movie.2160p.2160p.mkv` and
+  `Movie.2160p.12mb.2160p.12mb.mkv` no longer keep a stray resolution in the name;
+  `strip_media_tags` now strips repeated tags until stable
+- Year extraction no longer eats a title's trailing dot (`R.I.P.D. (2013)` keeps its dot)
+
 ## [1.1.0] - 2026-08-26
 
 ### Fixed
