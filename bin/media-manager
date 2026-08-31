@@ -187,6 +187,8 @@ Options:
   -c, --config FILE   Path to config file
   -n, --dry-run       fix-names only: show what would be renamed, change nothing
       --no-tmdb       fix-names only: skip TMDb verification (mechanical fixes only)
+      --tmdb-all      fix-names only: verify EVERY movie against TMDb, not just
+                      names that show damage (many more API requests)
   -V, --verbose       Show full HandBrakeCLI output (useful for debugging)
   -h, --help          Show this help message
   -v, --version       Show version
@@ -321,6 +323,10 @@ while [ $# -gt 0 ]; do
             ;;
         --no-tmdb)
             export NO_TMDB=1
+            shift
+            ;;
+        --tmdb-all)
+            export TMDB_VERIFY_ALL=1
             shift
             ;;
         -h|--help)

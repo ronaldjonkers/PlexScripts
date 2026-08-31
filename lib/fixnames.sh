@@ -82,7 +82,11 @@ run_fix_names() {
     local dry="$1" only_path="${2:-}"
 
     if [ -n "${TMDB_API_TOKEN:-}" ] && [ "${NO_TMDB:-}" != "1" ]; then
-        log_info "TMDb verification: enabled (${TMDB_LANGUAGE:-en-US})"
+        if [ "${TMDB_VERIFY_ALL:-}" = "1" ]; then
+            log_info "TMDb verification: enabled for ALL movies (${TMDB_LANGUAGE:-en-US})"
+        else
+            log_info "TMDb verification: enabled for damaged names only (${TMDB_LANGUAGE:-en-US})"
+        fi
     else
         log_warn "TMDb verification: DISABLED — mechanical fixes only"
         log_warn "Set TMDB_API_TOKEN in ${PROJECT_DIR}/.env to verify titles against TMDb"

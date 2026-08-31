@@ -243,8 +243,15 @@ def fix_basename(basename: str, media_type: str) -> tuple[str, str]:
     title = mechanical_clean(title)
     status = "cleaned"
 
+    # Only titles that show damage are worth an API request: a name the
+    # mechanical pass leaves untouched is assumed correct. Set TMDB_VERIFY_ALL=1
+    # (--tmdb-all) to verify every single movie against TMDb instead.
+    mech_stem = f"{title} ({year})" if year else title
+    has_issue = f"{mech_stem}{suffix}" != basename
+    verify_all = os.environ.get("TMDB_VERIFY_ALL", "") == "1"
+
     tmdb = TMDb()
-    if tmdb.enabled and title:
+    if tmdb.enabled and title and (has_issue or verify_all):
         try:
             hit = tmdb.lookup(title, year)
         except RuntimeError as exc:

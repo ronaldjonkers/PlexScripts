@@ -228,11 +228,16 @@ kinds of damage behind, all repaired by `fix-names`:
 
 ### TMDb verification
 
-With a TMDb API token configured, every movie title is verified against
+With a TMDb API token configured, movie titles are verified against
 [The Movie Database](https://www.themoviedb.org): the title and year are parsed from the
 filename, looked up, and replaced by the **official movie title** — so
 `Hansel  Gretel Witch Hunters (2013)` becomes `Hansel & Gretel - Witch Hunters (2013)`.
 Characters that are illegal in filenames are converted safely (`:` becomes ` - `).
+
+To keep API usage low, only names that show damage are looked up — a name the
+mechanical pass leaves untouched is assumed correct and costs zero requests.
+Pass `--tmdb-all` to verify every single movie instead (useful for a one-time
+full audit; expect one or two requests per unique title). Series never use TMDb.
 
 A rename is only accepted when TMDb confidently matches the title (year-anchored search
 with a similarity check) — unrecognized titles just get the mechanical fixes. Renames go

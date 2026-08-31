@@ -3,6 +3,13 @@
 All notable changes to this project will be documented in this file.
 Format follows [Semantic Versioning](https://semver.org/).
 
+## [1.2.1] - 2026-08-31
+
+### Changed
+- **fix-names only queries TMDb for damaged names** — a movie whose name the mechanical
+  pass leaves untouched is assumed correct and costs zero API requests. The new
+  `--tmdb-all` flag restores the old behaviour (verify every movie) for a full audit.
+
 ## [1.2.0] - 2026-08-31
 
 ### Added
