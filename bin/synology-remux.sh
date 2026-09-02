@@ -119,6 +119,8 @@ repair_file() {
     mkdir -p "$tmpdir" || { log "[FAIL] geen tmpdir in: $dir"; FAILED=$((FAILED+1)); return 1; }
     rm -f -- "$tmp"
 
+    log "[BEZIG] $base (is ${real}) → remuxen..."
+
     # MP4-bron: mov_text-subs → SRT-tracks in de MKV. MKV-bron: subs kopiëren.
     local subcodec="srt"
     [ "$real" = "mkv" ] && subcodec="copy"
@@ -170,7 +172,7 @@ for d in "${DIRS[@]}"; do
     log "=== Bezig met: $d ==="
     while IFS= read -r -d '' f; do
         CHECKED=$((CHECKED+1))
-        [ $(( CHECKED % 2000 )) -eq 0 ] && log "... $CHECKED bestanden gecontroleerd, $DONE gerepareerd"
+        [ $(( CHECKED % 500 )) -eq 0 ] && log "... $CHECKED bestanden gecontroleerd, $DONE gerepareerd"
         repair_file "$f"
     done < <(find "$d" -type d -name ".*" -prune -o \
         -type f \( -iname "*.mkv" -o -iname "*.mp4" -o -iname "*.m4v" \) -print0 2>/dev/null)
