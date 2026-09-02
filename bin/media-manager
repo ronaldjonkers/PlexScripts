@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Media Manager - Continuous media processing service
 # Watches directories for video files, encodes and renames them
-# Version: 1.2.0
+# Version: 1.3.0
 
 set -euo pipefail
 export LC_ALL=C
@@ -24,6 +24,7 @@ source "${PROJECT_DIR}/lib/naming.sh"
 source "${PROJECT_DIR}/lib/dedupe.sh"
 source "${PROJECT_DIR}/lib/encoding.sh"
 source "${PROJECT_DIR}/lib/fixnames.sh"
+source "${PROJECT_DIR}/lib/remux.sh"
 
 # ---------- Runtime flags ----------
 VERBOSE="${VERBOSE:-false}"
@@ -126,13 +127,6 @@ scan_directory() {
             continue
         fi
 
-        # Already tagged: nothing to encode or rename, but the title may still
-        # have a second tagged copy lying around — resolve that.
-        if is_already_tagged "$f"; then
-            dedupe_tagged_file "$f"
-            continue
-        fi
-
         # Skip files currently being written (modified in last 30 seconds)
         local mod_age
         if [ "$(detect_os)" = "macos" ]; then
@@ -142,6 +136,24 @@ scan_directory() {
         fi
         if [ "$mod_age" -lt 30 ]; then
             log_info "  Skipping (still being written): $(basename "$f")"
+            continue
+        fi
+
+        # An extension that lies about the container (an old rename-only pass
+        # relabelled .mp4 as .mkv) breaks Direct Play — repair it losslessly
+        if [ "${REMUX_MISLABELED:-yes}" = "yes" ] && needs_remux "$f"; then
+            if remux_mislabeled "$f"; then
+                f="$REMUXED_FILE"
+                count=$(( count + 1 ))
+            else
+                continue
+            fi
+        fi
+
+        # Already tagged: nothing to encode or rename, but the title may still
+        # have a second tagged copy lying around — resolve that.
+        if is_already_tagged "$f"; then
+            dedupe_tagged_file "$f"
             continue
         fi
 
@@ -169,7 +181,7 @@ run_scan() {
 # ---------- Usage ----------
 usage() {
     cat <<EOF
-Media Manager v1.2.0 - Continuous media processing service
+Media Manager v1.3.0 - Continuous media processing service
 
 Usage: $(basename "$0") [command] [options]
 
@@ -213,7 +225,7 @@ cmd_start() {
     acquire_lock
 
     log_info "=========================================="
-    log_info "Media Manager v1.2.0 starting"
+    log_info "Media Manager v1.3.0 starting"
     log_info "Verbose mode: ${VERBOSE}"
     log_info "Profile: ${PROFILE_NAME:-Custom}"
     log_info "Quality: 2160p=${VB2160}kbps 1080p=${VB1080}kbps 720p=${VB720}kbps"
@@ -229,6 +241,7 @@ cmd_start() {
     # Verify dependencies
     need HandBrakeCLI || exit 1
     need ffprobe || exit 1
+    need ffmpeg || exit 1
     need python3 || exit 1
     if ! check_handbrake; then
         log_error "HandBrakeCLI is broken. Fix it and try again."
@@ -251,6 +264,7 @@ cmd_scan() {
     log_info "Running single scan..."
     need HandBrakeCLI || exit 1
     need ffprobe || exit 1
+    need ffmpeg || exit 1
     need python3 || exit 1
     if ! check_handbrake; then
         log_error "HandBrakeCLI is broken. Fix it and try again."
@@ -338,7 +352,7 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         -v|--version)
-            echo "Media Manager v1.2.0"
+            echo "Media Manager v1.3.0"
             exit 0
             ;;
         *)

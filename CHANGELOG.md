@@ -3,6 +3,21 @@
 All notable changes to this project will be documented in this file.
 Format follows [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-09-02
+
+### Added
+- **Automatic lossless container repair** — an old rename-only pass relabelled `.mp4` files
+  as `.mkv` without remuxing; Plex is told "Matroska", finds MP4 data (with `mov_text`
+  subtitles and the audio track in front of the video) and refuses Direct Play. Every scan
+  now checks the real container via a 12-byte magic-number read and rebuilds mismatched
+  files as real MKVs with a bit-for-bit stream copy: no re-encode, zero quality loss.
+  `mov_text` subtitles become embedded SRT tracks; the copy is duration-verified before it
+  atomically replaces the original; an existing sibling is never overwritten.
+  Handles `.mkv`-that-is-MP4 and `.mp4`/`.m4v`-that-is-Matroska. Disable with
+  `REMUX_MISLABELED="no"`.
+- `lib/remux.sh` + `tests/test_remux.sh` (19 tests against real generated MP4/MKV files)
+- `ffmpeg` is now an explicit dependency of `start`/`scan` (it always shipped with ffprobe)
+
 ## [1.2.1] - 2026-08-31
 
 ### Changed

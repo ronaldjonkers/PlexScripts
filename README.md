@@ -12,6 +12,7 @@ Built for **Plex**, **Jellyfin**, **Emby**, or any media server that benefits fr
 - **Auto-detection** — automatically detects whether a directory contains movies or TV series
 - **Duplicate resolution** — when the same title exists twice, the best copy keeps the tagged name and the other one is cleaned up
 - **Filename repair with TMDb verification** — `fix-names` repairs damaged names (double spaces, `R I P D` → `R.I.P.D.`, duplicate resolution tags) and verifies movie titles against [TMDb](https://www.themoviedb.org) so Plex always recognizes them
+- **Container repair (lossless)** — files whose extension lies about the container (an MP4 renamed to `.mkv` without remuxing breaks Direct Play) are automatically rebuilt as real MKVs with a bit-for-bit stream copy: zero quality loss, no re-encode
 - **Subtitles follow the video** — external `.srt`/`.sub`/`.idx` sidecars are renamed along with the file, so Plex never loses them
 - **No-bloat protection** — skips encoding if the output would be larger than the source
 - **Bitrate tolerance** — skips encoding if the file is already within ±5% of the target bitrate
@@ -90,6 +91,7 @@ PlexScripts/
 │   ├── dedupe.sh               # Duplicate resolution & subtitle sidecars
 │   ├── naming.sh               # File naming & media type detection
 │   ├── fixnames.sh             # fix-names command (library filename repair)
+│   ├── remux.sh                # Container detection & lossless repair
 │   └── fix_filename.py         # Name repair logic + TMDb title verification
 ├── config/
 │   └── media-manager.conf.example  # Example configuration
@@ -99,7 +101,8 @@ PlexScripts/
 └── tests/
     ├── test_naming.sh          # Unit tests for naming logic
     ├── test_dedupe.sh          # Unit tests for duplicate handling
-    └── test_fixnames.sh        # Unit tests for filename repair
+    ├── test_fixnames.sh        # Unit tests for filename repair
+    └── test_remux.sh           # Unit tests for container repair
 ```
 
 ## Configuration
@@ -122,6 +125,7 @@ TOL_PCT=5               # Skip encoding if bitrate is within ±5%
 DELETE_ORIGINALS="no"           # Delete source files after encoding
 DUPLICATE_ACTION="keep_best"    # Same title twice: keep_best | trash | skip
 SIDECAR_EXTS="srt sub idx ass ssa vtt smi sup"   # Sidecars that follow a rename
+REMUX_MISLABELED="yes"          # Losslessly rebuild files whose extension lies
 
 # Service
 SCAN_INTERVAL=300       # Seconds between scans
@@ -272,6 +276,29 @@ The regular scan loop also applies the mechanical repairs to every *new* file it
 processes, so freshly downloaded files get a clean name from the start. TMDb
 verification only runs in `fix-names` (deliberately — the scan loop stays offline).
 
+## Container Repair (lossless)
+
+Older versions of this tool renamed `.mp4` files to `.mkv` without remuxing. The result is
+a file whose extension lies about its contents: Plex is told "Matroska", finds MP4 data
+(with `mov_text` subtitles and the audio track in front of the video track) and refuses
+Direct Play, even though the video and audio streams are perfectly compatible.
+
+Every scan now checks the real container (a 12-byte magic-number read, so it costs almost
+nothing) and repairs mismatches automatically:
+
+1. **Lossless remux** — video and audio streams are bit-for-bit copied into a real MKV.
+   No re-encode, zero quality loss, and it runs at network speed (~3% CPU).
+2. **Subtitles preserved** — `mov_text` subtitle streams are converted to SRT tracks
+   *embedded in the MKV* (plain-text conversion, nothing is lost). External `.srt`
+   sidecars are untouched and keep working, since the filename does not change.
+3. **Verified before replacing** — the copy must match the source duration (±2s) before
+   it atomically replaces the original; a failed remux leaves the original untouched.
+4. A real MKV wearing a `.mp4` name is repaired the other way around (remuxed to `.mkv`);
+   an existing sibling file is never overwritten.
+
+Handled cases: `.mkv` that is really MP4, `.mp4`/`.m4v` that is really Matroska.
+Disable with `REMUX_MISLABELED="no"` in the config.
+
 ## Duplicate Handling
 
 A rename can collide with a file that is already there — for example `Movie (2020).mkv` and
@@ -325,6 +352,7 @@ When a directory is set to `auto`, the service detects the media type by:
 bash tests/test_naming.sh
 bash tests/test_dedupe.sh
 bash tests/test_fixnames.sh
+bash tests/test_remux.sh
 ```
 
 ## License
@@ -333,4 +361,4 @@ MIT
 
 ## Version
 
-1.2.0 — See [CHANGELOG.md](CHANGELOG.md) for history.
+1.3.0 — See [CHANGELOG.md](CHANGELOG.md) for history.

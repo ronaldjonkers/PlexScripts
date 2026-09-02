@@ -35,6 +35,12 @@ DUPLICATE_ACTION="keep_best"
 # Space separated list of extensions; add "nfo" to move metadata files too.
 SIDECAR_EXTS="srt sub idx ass ssa vtt smi sup"
 
+# Repair files whose extension lies about the container (e.g. an MP4 that was
+# renamed to .mkv without remuxing — breaks Plex Direct Play). The repair is a
+# lossless remux: streams are bit-for-bit copied into a real MKV, mov_text
+# subtitles become embedded SRT tracks. Set to "no" to disable.
+REMUX_MISLABELED="yes"
+
 # ---------- Service Settings ----------
 # Seconds between directory scans
 SCAN_INTERVAL=300
