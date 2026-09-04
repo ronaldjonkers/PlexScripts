@@ -102,6 +102,29 @@ assert_eq "New file has .mkv extension" "${TMP_DIR}/fake_mkv_exists" "$([ -f "${
 assert_eq "Old .mp4-named file removed" "false" "$r"
 
 echo ""
+echo "=== Testing stream-loss guard (crippled ffmpeg) ==="
+
+# A wrapper that silently swaps the audio map for a second video map,
+# simulating Synology's crippled build dropping audio tracks.
+mkdir -p "${TMP_DIR}/bin"
+REAL_FFMPEG="$(command -v ffmpeg)"
+cat > "${TMP_DIR}/bin/ffmpeg" <<WRAP
+#!/bin/bash
+args=(); for a in "\$@"; do [ "\$a" = "0:a" ] && a="0:v"; args+=("\$a"); done
+exec "${REAL_FFMPEG}" "\${args[@]}"
+WRAP
+chmod +x "${TMP_DIR}/bin/ffmpeg"
+
+cp "${TMP_DIR}/real.mp4" "${TMP_DIR}/verminkt.mkv"
+PATH="${TMP_DIR}/bin:$PATH" remux_mislabeled "${TMP_DIR}/verminkt.mkv" >/dev/null && r="true" || r="false"
+assert_eq "Audio-dropping ffmpeg is rejected" "false" "$r"
+
+assert_eq "Original kept untouched after rejection" "mp4" "$(detect_container "${TMP_DIR}/verminkt.mkv")"
+
+audio="$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 "${TMP_DIR}/verminkt.mkv" | grep -c '')"
+assert_eq "Original still has its audio track" "1" "$audio"
+
+echo ""
 echo "=========================================="
 echo "Results: $PASS passed, $FAIL failed"
 echo "=========================================="
