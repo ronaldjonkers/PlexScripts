@@ -40,6 +40,14 @@ needs_remux() {
     esac
 }
 
+# "V:A" stream counts of a file, e.g. "1:5" for one video + five audio tracks
+count_va_streams() {
+    local v a
+    v="$(ffprobe -v error -select_streams v -show_entries stream=index -of csv=p=0 -- "$1" 2>/dev/null | grep -c '' || true)"
+    a="$(ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 -- "$1" 2>/dev/null | grep -c '' || true)"
+    echo "${v}:${a}"
+}
+
 # Losslessly remux a mislabeled file into a real MKV with the same stem.
 # On success REMUXED_FILE holds the (possibly renamed) path and 0 is returned.
 # The temp file lives in a hidden directory so scans never pick it up.
@@ -98,6 +106,18 @@ remux_mislabeled() {
     diff=$(( d1 > d2 ? d1 - d2 : d2 - d1 ))
     if [ "$d1" -le 0 ] || [ "$d2" -le 0 ] || [ "$diff" -gt 2 ]; then
         log_warn "  [REMUX] Duration mismatch (${d1}s vs ${d2}s), keeping original: $base"
+        rm -f -- "$tmp" "$errlog"; rmdir "$tmpdir" 2>/dev/null
+        return 1
+    fi
+
+    # Verify: every video and audio stream must have survived the copy.
+    # A crippled ffmpeg build (e.g. Synology's, which lacks EAC3/AC3) can
+    # silently drop streams it does not know — never accept that.
+    local va_in va_out
+    va_in="$(count_va_streams "$f")"
+    va_out="$(count_va_streams "$tmp")"
+    if [ "$va_in" != "$va_out" ]; then
+        log_warn "  [REMUX] Stream loss (source ${va_in} vs copy ${va_out} video/audio), keeping original: $base"
         rm -f -- "$tmp" "$errlog"; rmdir "$tmpdir" 2>/dev/null
         return 1
     fi

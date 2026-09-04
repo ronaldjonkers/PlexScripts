@@ -24,9 +24,9 @@ set -u
 # ---------- Mappen (PAS DEZE AAN naar de lokale paden op je Synology) ----------
 # Dit zijn de 3 mappen uit config/media-manager.conf, zoals ze op de NAS heten.
 HARDCODED_DIRS=(
-    "/volume1/Plex/Films"
+    "/volume2/Plex/Films"
     "/volume1/4KMovies"
-    "/volume1/Plex/TVSeries"
+    "/volume2/Plex/TVSeries"
 )
 
 DRY_RUN=0
@@ -62,8 +62,23 @@ find_bin() {
     done
     return 1
 }
-FFMPEG="$(find_bin ffmpeg)"  || { echo "FOUT: ffmpeg niet gevonden. Installeer ffmpeg (Package Center of SynoCommunity)." >&2; exit 1; }
-FFPROBE="$(find_bin ffprobe)" || { echo "FOUT: ffprobe niet gevonden (hoort bij ffmpeg)." >&2; exit 1; }
+FFMPEG="${FFMPEG:-$(find_bin ffmpeg)}"   || true
+FFPROBE="${FFPROBE:-$(find_bin ffprobe)}" || true
+[ -n "$FFMPEG" ] && [ -x "$FFMPEG" ]   || { echo "FOUT: ffmpeg niet gevonden. Installeer ffmpeg (Package Center of SynoCommunity)." >&2; exit 1; }
+[ -n "$FFPROBE" ] && [ -x "$FFPROBE" ] || { echo "FOUT: ffprobe niet gevonden (hoort bij ffmpeg)." >&2; exit 1; }
+
+# Keuring: Synology's ingebouwde /bin/ffmpeg mist EAC3/AC3/DTS (door Synology
+# uit DSM gesloopt) en laat die audiotracks GERUISLOOS vallen. Weiger zo'n
+# build hard — installeer de volwaardige ffmpeg van SynoCommunity, of geef
+# FFMPEG=/pad/naar/goede/ffmpeg mee.
+for codec in eac3 ac3 dts; do
+    if ! "$FFMPEG" -decoders 2>/dev/null | grep -qw "$codec"; then
+        echo "FOUT: $FFMPEG kan geen '$codec' aan — dit is een uitgeklede build die audiotracks laat vallen." >&2
+        echo "Installeer de volledige ffmpeg via SynoCommunity (https://synocommunity.com) en draai opnieuw," >&2
+        echo "of wijs een goede build aan met: FFMPEG=/pad/naar/ffmpeg FFPROBE=/pad/naar/ffprobe bash $0" >&2
+        exit 1
+    fi
+done
 
 ts() { date "+%Y-%m-%d %H:%M:%S"; }
 log() { echo "[$(ts)] $*"; }
@@ -83,6 +98,14 @@ duration_secs() {
     local d
     d="$("$FFPROBE" -v error -show_entries format=duration -of csv=p=0 -- "$1" 2>/dev/null | cut -d. -f1)"
     case "$d" in (*[!0-9]*|"") echo 0 ;; (*) echo "$d" ;; esac
+}
+
+# "V:A" streamtelling, bv. "1:5" voor één video- en vijf audiotracks
+count_va_streams() {
+    local v a
+    v="$("$FFPROBE" -v error -select_streams v -show_entries stream=index -of csv=p=0 -- "$1" 2>/dev/null | grep -c '')"
+    a="$("$FFPROBE" -v error -select_streams a -show_entries stream=index -of csv=p=0 -- "$1" 2>/dev/null | grep -c '')"
+    echo "${v}:${a}"
 }
 
 DONE=0; FAILED=0; SKIPPED=0; SUBSDROPPED=0; CHECKED=0
@@ -139,12 +162,24 @@ repair_file() {
         fi
     fi
 
-    # Verificatie: zelfde duur (±2s) als de bron, anders origineel behouden
+    # Verificatie 1: zelfde duur (±2s) als de bron, anders origineel behouden
     local d1 d2 diff
     d1="$(duration_secs "$f")"; d2="$(duration_secs "$tmp")"
     diff=$(( d1 > d2 ? d1 - d2 : d2 - d1 ))
     if [ "$d1" -le 0 ] || [ "$d2" -le 0 ] || [ "$diff" -gt 2 ]; then
         log "[FAIL] duurverschil (${d1}s vs ${d2}s), origineel behouden: $base"
+        rm -f -- "$tmp" "${tmpdir}/err.log"; rmdir "$tmpdir" 2>/dev/null
+        FAILED=$((FAILED+1)); return 1
+    fi
+
+    # Verificatie 2: ALLE video- en audiostreams moeten de kopie overleefd
+    # hebben. Synology's kale ffmpeg (zonder EAC3/AC3) laat streams anders
+    # geruisloos vallen — dat mag nooit geaccepteerd worden.
+    local va_in va_out
+    va_in="$(count_va_streams "$f")"
+    va_out="$(count_va_streams "$tmp")"
+    if [ "$va_in" != "$va_out" ]; then
+        log "[FAIL] streamverlies (bron ${va_in} vs kopie ${va_out} video:audio), origineel behouden: $base"
         rm -f -- "$tmp" "${tmpdir}/err.log"; rmdir "$tmpdir" 2>/dev/null
         FAILED=$((FAILED+1)); return 1
     fi
