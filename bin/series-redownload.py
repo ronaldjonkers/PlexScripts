@@ -46,7 +46,7 @@ REPORT_FILE = OUTPUT_DIR / "rapport.txt"
 
 PACK_THRESHOLD = int(os.environ.get("PACK_THRESHOLD", "3"))  # >= zoveel missend -> season pack
 REQUEST_DELAY = 1.2   # seconden tussen API-calls (netjes voor NZBGeek)
-CATEGORIES = "5040,5045"  # TV HD + TV UHD
+CATEGORIES = os.environ.get("NZB_CATS", "5040,5045")  # TV HD + TV UHD; 5020=Foreign
 REJECT_TERMS = ("sample", "subpack", "extras only", "3d.")
 USER_AGENT = "bluray-tracker/1.0"
 
@@ -90,6 +90,7 @@ def parse_damage_list(path: Path) -> dict[str, dict[int, list[int]]]:
 
 def clean_query(title: str) -> str:
     t = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode()
+    t = t.replace("'", "")   # "Marvel's" → "Marvels", zoals in releasenamen
     t = re.sub(r"\((?:19|20)\d{2}\)|\(US\)|\(UK\)", " ", t)   # jaartal/land-suffix weg
     t = t.replace("&", "and")
     return re.sub(r"[^A-Za-z0-9]+", " ", t).strip()
@@ -151,6 +152,7 @@ def score(name: str, size: int, group_bonus: dict[str, int]) -> int:
 
 def normalize_release(s: str) -> str:
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+    s = s.replace("'", "")
     s = re.sub(r"[._\-]+", " ", s)
     s = re.sub(r"\b(19|20)\d{2}\b", " ", s)   # jaartallen tellen niet mee
     return re.sub(r"\s+", " ", s).strip()
